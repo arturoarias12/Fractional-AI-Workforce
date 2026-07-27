@@ -1,0 +1,24 @@
+{
+  "schema_version": "0.1.0",
+  "agent_id": "technical_trader_agent",
+  "display_name": "Technical Trader Agent",
+  "description": "Dynamically proposes technical strategies using point-in-time OHLCV and owned deterministic evidence tools.",
+  "version": "0.1.0",
+  "role_type": "specialist",
+  "hireable": true,
+  "implementation_status": "external_implementation_pending_integration",
+  "input_contract": "PMMandate",
+  "output_contract": "TraderStrategyPackage",
+  "capabilities": [
+    "dynamic_technical_strategy_generation",
+    "support_resistance_detection",
+    "head_and_shoulders_detection",
+    "deterministic_backtest_interpretation"
+  ],
+  "required_dependencies": [
+    "model_client",
+    "data_service",
+    "backtest_engine"
+  ],
+  "owner": "Arturo"
+}

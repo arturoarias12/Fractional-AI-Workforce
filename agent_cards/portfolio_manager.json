@@ -1,6 +1,24 @@
 {
-  "name": "portfolio_manager",
-  "description": "Placeholder card for the portfolio manager agent.",
+  "schema_version": "0.1.0",
+  "agent_id": "portfolio_manager",
+  "display_name": "Portfolio Manager",
+  "description": "Human management boundary for mandates, staffing, and final decisions.",
   "version": "0.1.0",
-  "capabilities": []
+  "role_type": "manager",
+  "hireable": false,
+  "implementation_status": "placeholder",
+  "input_contract": "ReportingOutput",
+  "output_contract": "PMMandate | PMDecision",
+  "capabilities": [
+    "mandate_definition",
+    "specialist_staffing",
+    "final_candidate_selection",
+    "request_another_round"
+  ],
+  "required_dependencies": [
+    "management_ui",
+    "graph_state",
+    "memory_store"
+  ],
+  "owner": "human_pm"
 }

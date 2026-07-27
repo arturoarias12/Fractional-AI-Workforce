@@ -1,6 +1,22 @@
 {
-  "name": "reporting_agent",
-  "description": "Placeholder card for the reporting agent.",
+  "schema_version": "0.1.0",
+  "agent_id": "reporting_agent",
+  "display_name": "Reporting Agent",
+  "description": "Documents and compares Risk-approved candidates for the Portfolio Manager.",
   "version": "0.1.0",
-  "capabilities": []
+  "role_type": "specialist",
+  "hireable": true,
+  "implementation_status": "placeholder",
+  "input_contract": "ReportingRequest",
+  "output_contract": "ReportingOutput",
+  "capabilities": [
+    "risk_survivor_documentation",
+    "cross_lens_comparison",
+    "strategy_memo_generation"
+  ],
+  "required_dependencies": [
+    "model_client",
+    "risk_review_response"
+  ],
+  "owner": "unconfirmed"
 }

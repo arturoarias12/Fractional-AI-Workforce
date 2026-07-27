@@ -1,0 +1,23 @@
+{
+  "schema_version": "0.1.0",
+  "agent_id": "fundamental_trader_agent",
+  "display_name": "Fundamental Trader Agent",
+  "description": "Dynamically proposes ETF-level fundamental strategies from available point-in-time characteristics and exposures.",
+  "version": "0.1.0",
+  "role_type": "specialist",
+  "hireable": true,
+  "implementation_status": "placeholder",
+  "input_contract": "PMMandate",
+  "output_contract": "TraderStrategyPackage",
+  "capabilities": [
+    "dynamic_etf_fundamental_strategy_generation",
+    "etf_metadata_request",
+    "deterministic_backtest_interpretation"
+  ],
+  "required_dependencies": [
+    "model_client",
+    "data_service",
+    "backtest_engine"
+  ],
+  "owner": "unconfirmed"
+}

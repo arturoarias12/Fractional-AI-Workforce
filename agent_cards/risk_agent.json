@@ -1,6 +1,24 @@
 {
-  "name": "risk_agent",
-  "description": "Placeholder card for the risk agent.",
+  "schema_version": "0.1.0",
+  "agent_id": "risk_agent",
+  "display_name": "Risk / Skeptic Agent",
+  "description": "Collectively reviews settled trader candidates and approves or vetoes each strategy.",
   "version": "0.1.0",
-  "capabilities": []
+  "role_type": "specialist",
+  "hireable": true,
+  "implementation_status": "placeholder",
+  "input_contract": "RiskReviewRequest",
+  "output_contract": "RiskReviewResponse",
+  "capabilities": [
+    "collective_candidate_review",
+    "overfitting_review",
+    "look_ahead_bias_review",
+    "selection_bias_review",
+    "candidate_veto"
+  ],
+  "required_dependencies": [
+    "model_client",
+    "trader_strategy_packages"
+  ],
+  "owner": "unconfirmed"
 }

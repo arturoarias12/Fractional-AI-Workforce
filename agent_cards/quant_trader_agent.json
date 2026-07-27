@@ -1,0 +1,24 @@
+{
+  "schema_version": "0.1.0",
+  "agent_id": "quant_trader_agent",
+  "display_name": "Quant Trader Agent",
+  "description": "Dynamically proposes quantitative strategies from point-in-time statistical and cross-asset evidence.",
+  "version": "0.1.0",
+  "role_type": "specialist",
+  "hireable": true,
+  "implementation_status": "placeholder",
+  "input_contract": "PMMandate",
+  "output_contract": "TraderStrategyPackage",
+  "capabilities": [
+    "dynamic_quantitative_strategy_generation",
+    "factor_and_cross_asset_data_request",
+    "out_of_sample_scrutiny",
+    "deterministic_backtest_interpretation"
+  ],
+  "required_dependencies": [
+    "model_client",
+    "data_service",
+    "backtest_engine"
+  ],
+  "owner": "unconfirmed"
+}
