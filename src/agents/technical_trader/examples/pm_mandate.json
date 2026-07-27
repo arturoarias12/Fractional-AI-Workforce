@@ -1,0 +1,21 @@
+{
+  "workflow_id": "workflow-example",
+  "task_id": "pm-mandate-example",
+  "as_of_date": "2026-07-25",
+  "investment_objective": "Research a codeable ETF technical strategy subject to the PM mandate.",
+  "risk_profile": "moderate",
+  "investment_horizon": "medium term",
+  "liquidity_requirements": "Use liquid exchange-traded funds.",
+  "permitted_asset_universe": [
+    "SPY",
+    "QQQ"
+  ],
+  "prohibited_assets": [],
+  "leverage_constraints": "No leverage.",
+  "short_selling_constraints": "Long only.",
+  "risk_limits": {
+    "maximum_drawdown_preference": 0.15
+  },
+  "rebalancing_preference": "monthly",
+  "pm_notes": "All data must respect the mandate as-of date."
+}

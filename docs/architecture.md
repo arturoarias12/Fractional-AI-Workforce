@@ -50,7 +50,7 @@ Backtest boundaries.
 
 Technical Trader integration must eventually adapt the separately developed
 `project_agents/technical_trader_agent` package. Fundamental and Quant remain
-teammate-owned placeholders.
+placeholders.
 
 ## Join and partial-result semantics
 
@@ -83,8 +83,8 @@ identities, state fields, routing functions, and join semantics can be mapped to
 LangGraph after the workflow owners confirm final state serialization and
 reducers.
 
-[ADR 0001](adr/0001-langgraph-tooling.md) confirms the LangGraph 1.2
-major-compatible Graph API for tooling. Arturo's separately developed Technical
-Trader package includes an optional single-node compatibility adapter. This
-does not implement or replace the production workflow assigned to Emma and
-Shaurya.
+[Architecture Decision Record 0001](architecture_decision_record/0001-langgraph-tooling.md)
+records the accepted LangGraph 1.2 major-compatible Graph API for tooling. The
+separately developed Technical Trader package includes an optional single-node
+compatibility adapter. This does not implement or replace the production
+workflow.

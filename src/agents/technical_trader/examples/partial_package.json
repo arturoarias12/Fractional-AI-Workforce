@@ -1,0 +1,30 @@
+{
+  "package_id": "pm-mandate-example.technical.trader.package",
+  "trader_type": "technical",
+  "lineage": {
+    "workflow_id": "workflow-example",
+    "task_id": "pm-mandate-example.technical.trader",
+    "parent_task_id": "pm-mandate-example",
+    "source_task_id": "pm-mandate-example"
+  },
+  "mandate_reference": {
+    "workflow_id": "workflow-example",
+    "task_id": "pm-mandate-example",
+    "as_of_date": "2026-07-25"
+  },
+  "status": "failed",
+  "constraint_assessment": {
+    "status": "not_evaluated",
+    "mappings": [],
+    "violations": [],
+    "requires_risk_validation": true
+  },
+  "failures": [
+    {
+      "stage": "integration",
+      "message": "DataService and BacktestEngine adapters are not configured.",
+      "retryable": true
+    }
+  ],
+  "eligible_for_risk_review": false
+}

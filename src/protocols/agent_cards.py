@@ -26,10 +26,11 @@ class AgentCard:
     output_contract: str
     capabilities: tuple[str, ...]
     required_dependencies: tuple[str, ...]
-    owner: str
+    owner: str | None = None
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "AgentCard":
+        owner = value.get("owner")
         return cls(
             schema_version=str(value["schema_version"]),
             agent_id=str(value["agent_id"]),
@@ -45,5 +46,5 @@ class AgentCard:
             required_dependencies=tuple(
                 value.get("required_dependencies", ())
             ),
-            owner=str(value["owner"]),
+            owner=None if owner is None else str(owner),
         )

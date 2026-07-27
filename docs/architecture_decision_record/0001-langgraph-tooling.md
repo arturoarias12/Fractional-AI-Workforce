@@ -1,22 +1,20 @@
-# ADR 0001: LangGraph Tooling Boundary
+# Architecture Decision Record 0001: LangGraph Tooling Boundary
 
-- Status: Accepted for Arturo-owned tooling
+- Status: Accepted
 - Date: 2026-07-27
-- Scope: Framework confirmation and Technical Trader compatibility only
+- Scope: Project framework tooling and Technical Trader compatibility
 
 ## Context
 
 The revised architecture uses three independent traders and a later
-team-integrated workflow. Arturo owns confirmation of the agent framework and
-tooling plus the Technical Trader implementation. Emma owns the State Graph
-and workflow update, while Shaurya owns A2A scaffolding and the complete
-end-to-end loop.
+integrated workflow. Framework compatibility can be evaluated independently,
+while the production State Graph, A2A scaffolding, and end-to-end loop remain
+separate project workstreams.
 
 A framework decision is needed now, but implementing the production graph here
-would conflict with those assignments and prematurely freeze teammate-owned
-contracts.
+would prematurely freeze shared contracts that are still evolving.
 
-## Decision
+## Proposed decision
 
 Use the LangGraph Python Graph API from the `1.2` major-compatible line:
 
@@ -24,15 +22,15 @@ Use the LangGraph Python Graph API from the `1.2` major-compatible line:
 langgraph>=1.2,<2
 ```
 
-The Technical Trader package exposes:
+The Technical Trader subpackage exposes:
 
 1. a framework-neutral async node through `make_langgraph_node`; and
 2. an optional LangGraph adapter that compiles only a single Technical Trader
    node.
 
-LangGraph remains an optional package extra so the Technical Trader runtime,
-models, tools, and service Protocols stay replaceable and do not depend on the
-orchestrator.
+LangGraph remains an optional project dependency so the Technical Trader
+runtime, models, tools, and service Protocols stay replaceable and do not
+depend on the orchestrator.
 
 The optional adapter:
 
@@ -43,7 +41,7 @@ The optional adapter:
 - accepts an externally supplied checkpointer; and
 - defines no production routing beyond `START → Technical Trader → END`.
 
-## Ownership boundaries
+## Integration boundaries
 
 This decision does not implement or finalize:
 
@@ -59,11 +57,11 @@ This decision does not implement or finalize:
 - dashboard streaming; or
 - final shared state and serialization contracts.
 
-Those remain with their assigned owners. The Technical Trader adapter is
-intended to be embedded as a node or subgraph after they publish those
-contracts.
+Those remain project-level integration decisions. The Technical Trader adapter
+is intended to be embedded as a node or subgraph after the relevant contracts
+are confirmed.
 
-## Integration requirements for the production owners
+## Integration requirements
 
 - Parallel writers must use branch-isolated keys or explicit associative
   reducers.
@@ -72,16 +70,15 @@ contracts.
 - Node callables should remain async because the traders call model and service
   dependencies.
 - Durable persistence, retention, and replay policies must be selected by the
-  relevant workflow and Memory owners.
+  project.
 - The production graph should inject agent and service dependencies rather than
   import provider-specific clients into graph topology.
 
 ## Consequences
 
-The framework and version boundary are confirmed without taking ownership of
-the production workflow. Arturo can validate Technical Trader compatibility
-now, while Emma and Shaurya remain free to define the final state, reducers,
-A2A lifecycle, and full-loop topology.
+The proposed framework and version boundary allow Technical Trader
+compatibility to be validated without defining the final project state,
+reducers, A2A lifecycle, or full-loop topology.
 
 ## Official references
 

@@ -5,10 +5,17 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fractional-ai-workforce"
 version = "0.1.0"
-description = "Implementation-ready placeholder scaffold for a multi-agent investment-research system."
+description = "Multi-agent investment-research system."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pydantic>=2.7,<3",
+]
+
+[project.optional-dependencies]
+langgraph = [
+    "langgraph>=1.2,<2",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
