@@ -1,5 +1,43 @@
-"""Deterministic shared tool boundaries."""
+"""Deterministic shared backtesting interfaces and implementation."""
 
-from .backtest_engine import BacktestEngine
+from .backtest_engine import (
+    BacktestArtifactSink,
+    BacktestArtifacts,
+    BacktestConfigurationError,
+    BacktestDataError,
+    BacktestDataResolver,
+    BacktestEngine,
+    BacktestEngineError,
+    BacktestExecutionError,
+    DeterministicBacktestEngine,
+    EquityPoint,
+    ExecutionAssumptions,
+    FunctionalStrategyExecutor,
+    PriceBar,
+    ResolvedBacktestData,
+    StrategyEvaluationContext,
+    StrategyExecutor,
+    StrategySession,
+    Transaction,
+)
 
-__all__ = ["BacktestEngine"]
+__all__ = [
+    "BacktestArtifactSink",
+    "BacktestArtifacts",
+    "BacktestConfigurationError",
+    "BacktestDataError",
+    "BacktestDataResolver",
+    "BacktestEngine",
+    "BacktestEngineError",
+    "BacktestExecutionError",
+    "DeterministicBacktestEngine",
+    "EquityPoint",
+    "ExecutionAssumptions",
+    "FunctionalStrategyExecutor",
+    "PriceBar",
+    "ResolvedBacktestData",
+    "StrategyEvaluationContext",
+    "StrategyExecutor",
+    "StrategySession",
+    "Transaction",
+]
