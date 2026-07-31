@@ -20,6 +20,10 @@ from .pm import PMDecision, PMDecisionType
 from .reporting import ReportingOutput, ReportingRequest
 from .risk import (
     RiskCandidateDecision,
+    RiskCheckId,
+    RiskCheckResult,
+    RiskCheckScope,
+    RiskCheckVerdict,
     RiskReviewRequest,
     RiskReviewResponse,
     RiskVerdict,
@@ -44,6 +48,10 @@ __all__ = [
     "ReportingOutput",
     "ReportingRequest",
     "RiskCandidateDecision",
+    "RiskCheckId",
+    "RiskCheckResult",
+    "RiskCheckScope",
+    "RiskCheckVerdict",
     "RiskReviewRequest",
     "RiskReviewResponse",
     "RiskVerdict",

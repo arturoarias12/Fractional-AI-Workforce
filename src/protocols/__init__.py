@@ -40,6 +40,11 @@ from .data import (
     DataResponse,
 )
 from .events import EventType, OperationalEvent
+from .lifecycle import (
+    LIFECYCLE_SCHEMA_VERSION,
+    AgentExecutionState,
+    AgentLifecycleRecord,
+)
 from .mandate import PMMandate
 from .memory import MemoryContext, MemoryRecord
 from .pm import PMDecision, PMDecisionType
@@ -47,6 +52,10 @@ from .reporting import ReportingOutput, ReportingRequest
 from .risk import (
     DEFAULT_COLLECTIVE_CHECKS,
     RiskCandidateDecision,
+    RiskCheckId,
+    RiskCheckResult,
+    RiskCheckScope,
+    RiskCheckVerdict,
     RiskReviewRequest,
     RiskReviewResponse,
     RiskVerdict,
@@ -65,6 +74,8 @@ from .trader import (
 
 __all__ = [
     "A2AMessage",
+    "AgentExecutionState",
+    "AgentLifecycleRecord",
     "AgentCard",
     "BacktestInterpretationDraft",
     "BacktestPlan",
@@ -89,6 +100,7 @@ __all__ = [
     "DataUsageSummary",
     "EventType",
     "ExtensibleModel",
+    "LIFECYCLE_SCHEMA_VERSION",
     "MandateConstraintAssessment",
     "MandateReference",
     "MemoryContext",
@@ -103,6 +115,10 @@ __all__ = [
     "ReportingOutput",
     "ReportingRequest",
     "RiskCandidateDecision",
+    "RiskCheckId",
+    "RiskCheckResult",
+    "RiskCheckScope",
+    "RiskCheckVerdict",
     "RiskReviewRequest",
     "RiskReviewResponse",
     "RiskVerdict",

@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Iterable
 
-from protocols.research_contracts import (
+from protocols import (
     PMDecision,
     PMDecisionType,
     RiskReviewResponse,

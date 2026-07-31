@@ -6,15 +6,16 @@
 
 ## Context
 
-The revised architecture uses three independent traders and a later
-integrated workflow. Framework compatibility can be evaluated independently,
-while the production State Graph, A2A scaffolding, and end-to-end loop remain
-separate project workstreams.
+The current architecture uses three independent traders in parallel, followed
+by collective Risk review, Reporting, a human Portfolio Manager decision, and
+round-to-round Memory. Data and backtesting are injected shared tools, not
+hireable agent nodes.
 
-A framework decision is needed now, but implementing the production graph here
-would prematurely freeze shared contracts that are still evolving.
+The framework must expose this workflow explicitly while keeping agent logic,
+cross-agent contracts, persistence, telemetry, and provider choices
+replaceable.
 
-## Proposed decision
+## Decision
 
 Use the LangGraph Python Graph API from the `1.2` major-compatible line:
 
@@ -22,67 +23,70 @@ Use the LangGraph Python Graph API from the `1.2` major-compatible line:
 langgraph>=1.2,<2
 ```
 
-The Technical Trader subpackage exposes:
+The project graph implementation:
 
-1. a framework-neutral async node through `make_langgraph_node`; and
-2. an optional LangGraph adapter that compiles only a single Technical Trader
-   node.
-
-LangGraph remains an optional project dependency so the Technical Trader
-runtime, models, tools, and service Protocols stay replaceable and do not
-depend on the orchestrator.
-
-The optional adapter:
-
-- uses a `TypedDict` state;
-- returns state updates without mutating input state;
-- supports async execution;
-- serializes the Technical Trader package to JSON-compatible data;
+- uses typed shared state and explicit branch-isolated reducers;
+- fans out Technical, Fundamental, and Quant Traders in parallel;
+- waits for all active trader branches to settle before collective Risk
+  review;
+- converts ordinary trader failures into settled packages so one branch does
+  not erase successful sibling work;
+- routes Risk or Reporting infrastructure failures to human review;
+- pauses for the Portfolio Manager through a durable LangGraph interrupt;
+- writes Memory before termination or another bounded research round;
 - accepts an externally supplied checkpointer; and
-- defines no production routing beyond `START → Technical Trader → END`.
+- injects every agent/service node instead of importing provider-specific
+  implementations into the topology.
+
+The Technical Trader also retains a one-node compatibility graph so it can run
+independently during integration.
 
 ## Integration boundaries
 
-This decision does not implement or finalize:
+LangGraph owns workflow execution, fan-out/fan-in, routing, loops, interrupts,
+and checkpoint integration. It does not own:
 
-- the team production `StateGraph`;
-- PM intake or human-decision interrupts;
-- parallel Technical/Fundamental/Quant fan-out;
-- parallel state reducers or fan-in behavior;
-- A2A message lifecycle;
-- Risk, Reporting, or Memory nodes;
-- checkpointer or store technology;
-- thread-ID policy;
-- retry, global timeout, or cancellation policy;
-- dashboard streaming; or
-- final shared state and serialization contracts.
+- model-provider selection or agent prompts;
+- the Data Service or deterministic Backtest Engine;
+- centralized A2A envelopes or the Agent Card registry;
+- Risk judgment, Reporting content, or Memory storage;
+- the dashboard event adapter or historical productivity analytics;
+- the production persistence backend and retention policy; or
+- team policy decisions such as the canonical benchmark and validation-touch
+  limits.
 
-Those remain project-level integration decisions. The Technical Trader adapter
-is intended to be embedded as a node or subgraph after the relevant contracts
-are confirmed.
+Those components remain behind versioned, framework-neutral interfaces.
 
-## Integration requirements
+## Runtime requirements
 
-- Parallel writers must use branch-isolated keys or explicit associative
-  reducers.
-- Human interrupts require a checkpointer and stable `thread_id`.
-- Production state must be checkpoint-serializable.
-- Node callables should remain async because the traders call model and service
-  dependencies.
-- Durable persistence, retention, and replay policies must be selected by the
-  project.
-- The production graph should inject agent and service dependencies rather than
-  import provider-specific clients into graph topology.
+- Production compilation requires an injected checkpointer.
+- Each invocation must use a stable LangGraph `thread_id`.
+- Nodes return partial state updates and must not mutate input state.
+- Checkpointed values must remain JSON-serializable or use an agreed serializer.
+- Large datasets, engine ledgers, and reports remain external artifacts; state
+  stores references and validated summaries.
+- Node adapters must propagate cancellation and use idempotency keys before
+  automatic retries are enabled.
+
+## Acceptance status
+
+The executable topology and human-interrupt boundary are implemented. Full
+framework acceptance still requires integrated teammate nodes, a selected
+persistent checkpointer, bounded retry/idempotency policy, centralized domain
+event translation, automated integration tests, and a documented clone/run
+procedure.
 
 ## Consequences
 
-The proposed framework and version boundary allow Technical Trader
-compatibility to be validated without defining the final project state,
-reducers, A2A lifecycle, or full-loop topology.
+The graph can be assembled before all teammate implementations exist because
+its dependencies are injected. Missing agents are not simulated in production;
+their real graph-compatible adapters are required for an end-to-end run.
+
+The orchestration can be replaced later because agent, service, and domain
+contracts do not import LangGraph.
 
 ## Official references
 
-- https://docs.langchain.com/oss/python/langgraph/install
-- https://docs.langchain.com/oss/python/langgraph/use-graph-api
+- https://docs.langchain.com/oss/python/langgraph/graph-api
 - https://docs.langchain.com/oss/python/langgraph/interrupts
-- https://docs.langchain.com/oss/python/langgraph/persistence
+- https://reference.langchain.com/python/langgraph/graph/state/StateGraph/compile

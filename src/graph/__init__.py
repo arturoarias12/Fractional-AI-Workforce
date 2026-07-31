@@ -1,10 +1,15 @@
-"""Planned graph state, nodes, routing, and declarative workflow."""
+"""Framework-neutral graph contracts.
 
-from .state import TraderBranchState, WorkflowState
+Import :mod:`graph.production` only when the optional LangGraph dependency is
+installed.
+"""
+
+from .state import TraderBranchState, WorkflowInput, WorkflowState
 from .workflow import WorkflowBlueprint, planned_workflow
 
 __all__ = [
     "TraderBranchState",
+    "WorkflowInput",
     "WorkflowBlueprint",
     "WorkflowState",
     "planned_workflow",
