@@ -1,9 +1,10 @@
 # Risk / Skeptic Agent
 
 Implementation of the collective review defined by the team's 3-way
-cherry-picking checklist (CP-1 … CP-13). Source: `src/agents/risk_agent_impl.py`.
-Tests: `tests/test_risk_agent_impl.py` (unit) and
-`tests/test_risk_agent_graph_integration.py` (real compiled graph).
+cherry-picking checklist (CP-1 … CP-13). Source: `src/agents/risk_agent/`
+(`risk_agent.py` is the Protocol, `risk_agent_impl.py` the implementation).
+Tests: `tests/risk_agent/test_risk_agent_impl.py` (unit) and
+`tests/risk_agent/test_risk_agent_graph_integration.py` (real compiled graph).
 
 ## What it does
 

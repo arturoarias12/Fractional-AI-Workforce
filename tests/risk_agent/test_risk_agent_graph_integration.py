@@ -13,7 +13,7 @@ from typing import Any, Mapping
 
 import pytest
 
-from agents.risk_agent_impl import RiskAgentImpl, make_risk_review_node
+from agents.risk_agent import RiskAgentImpl, make_risk_review_node
 from protocols import (
     PMDecision,
     PMDecisionType,

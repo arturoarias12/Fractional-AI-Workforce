@@ -4,8 +4,12 @@ from .base import TraderAgent
 from .fundamental_trader import FundamentalTraderAgent
 from .quant_trader import QuantTraderAgent
 from .reporting_agent import ReportingAgent
-from .risk_agent import RiskAgent
-from .risk_agent_impl import RiskAgentImpl, RiskPolicy, make_risk_review_node
+from .risk_agent import (
+    RiskAgent,
+    RiskAgentImpl,
+    RiskPolicy,
+    make_risk_review_node,
+)
 from .technical_trader import TechnicalTraderAgent
 
 __all__ = [
