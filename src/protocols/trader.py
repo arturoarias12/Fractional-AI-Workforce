@@ -19,6 +19,7 @@ from .common import (
     ContractModel,
     MandateReference,
     NonEmptyStr,
+    ResearchExecutionContext,
     RunStatus,
     SpecialistId,
     TaskLineage,
@@ -31,6 +32,15 @@ class TraderTask(ContractModel):
     mandate: PMMandate
     lineage: TaskLineage
     trader_id: SpecialistId
+    execution_context: ResearchExecutionContext
+
+    @model_validator(mode="after")
+    def align_context_and_lineage(self) -> "TraderTask":
+        if self.execution_context.attempt != self.lineage.attempt:
+            raise ValueError(
+                "TraderTask execution-context and lineage attempts must match."
+            )
+        return self
 
 
 class TraderResearchPlanDraft(ContractModel):

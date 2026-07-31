@@ -7,7 +7,7 @@ The validation split is code-owned and supplied by shared evaluation policy.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -17,6 +17,7 @@ from .common import (
     ContractModel,
     ExtensibleModel,
     NonEmptyStr,
+    ResearchExecutionContext,
     SpecialistId,
     TaskLineage,
 )
@@ -140,6 +141,7 @@ class BacktestRequest(ExtensibleModel):
     request_id: NonEmptyStr
     trader_id: SpecialistId
     lineage: TaskLineage
+    execution_context: ResearchExecutionContext
     as_of_date: date
     candidate: CandidateRuleSpecification
     plan: BacktestPlan
@@ -171,6 +173,10 @@ class BacktestRequest(ExtensibleModel):
 
     @model_validator(mode="after")
     def validate_identity_and_windows(self) -> "BacktestRequest":
+        if self.execution_context.attempt != self.lineage.attempt:
+            raise ValueError(
+                "Backtest execution-context and lineage attempts must match."
+            )
         if self.candidate.trader_id is not self.trader_id:
             raise ValueError(
                 "Backtest request and candidate trader_id must match."
@@ -200,10 +206,82 @@ class BacktestStatus(StrEnum):
     INSUFFICIENT_DATA = "insufficient_data"
 
 
+class BacktestRunLedgerEntry(ExtensibleModel):
+    """Audit record for one completed Backtest Engine attempt.
+
+    The engine always returns this record with its result. An injected ledger
+    sink may additionally persist it and return immutable references.
+    ``run_id`` identifies this exact engine attempt; ``workflow_run_id``
+    identifies the encompassing multi-agent research run.
+    """
+
+    ledger_entry_id: NonEmptyStr
+    recorded_at: datetime
+    run_id: NonEmptyStr
+    workflow_run_id: NonEmptyStr
+    workflow_id: NonEmptyStr
+    round_number: int = Field(ge=1)
+    task_id: NonEmptyStr
+    attempt: int = Field(ge=1)
+    request_id: NonEmptyStr
+    result_id: NonEmptyStr
+    trader_id: SpecialistId
+    candidate_id: NonEmptyStr
+    strategy_name: NonEmptyStr
+    executor_id: NonEmptyStr
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    canonical_universe_id: NonEmptyStr | None = None
+    evaluation_policy_id: NonEmptyStr | None = None
+    resolved_symbols: list[NonEmptyStr] = Field(default_factory=list)
+    data_references: list[NonEmptyStr] = Field(default_factory=list)
+    requested_start_date: date | None = None
+    requested_end_date: date | None = None
+    resolved_start_time: datetime | None = None
+    resolved_end_time: datetime | None = None
+    benchmark: NonEmptyStr | None = None
+    status: BacktestStatus
+    metrics: dict[str, float | int | None] = Field(default_factory=dict)
+    out_of_sample_metrics: dict[str, float | int | None] = Field(
+        default_factory=dict
+    )
+    benchmark_metrics: dict[str, float | int | None] = Field(
+        default_factory=dict
+    )
+    warnings: list[NonEmptyStr] = Field(default_factory=list)
+    constraint_violations: list[NonEmptyStr] = Field(default_factory=list)
+    artifact_references: list[NonEmptyStr] = Field(default_factory=list)
+    failure_reason: NonEmptyStr | None = None
+    additional_fields: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def require_timezone_aware_timestamps(self) -> "BacktestRunLedgerEntry":
+        timestamps = {
+            "recorded_at": self.recorded_at,
+            "resolved_start_time": self.resolved_start_time,
+            "resolved_end_time": self.resolved_end_time,
+        }
+        for field_name, value in timestamps.items():
+            if (
+                value is not None
+                and (value.tzinfo is None or value.utcoffset() is None)
+            ):
+                raise ValueError(f"{field_name} must be timezone-aware.")
+        if (
+            self.resolved_start_time is not None
+            and self.resolved_end_time is not None
+            and self.resolved_start_time > self.resolved_end_time
+        ):
+            raise ValueError(
+                "resolved_start_time must not exceed resolved_end_time."
+            )
+        return self
+
+
 class BacktestResult(ExtensibleModel):
     """Performance output calculated only by deterministic code."""
 
     result_id: NonEmptyStr
+    execution_attempt_id: NonEmptyStr | None = None
     request_id: NonEmptyStr
     candidate_id: NonEmptyStr
     status: BacktestStatus
@@ -222,5 +300,7 @@ class BacktestResult(ExtensibleModel):
     warnings: list[NonEmptyStr] = Field(default_factory=list)
     constraint_violations: list[NonEmptyStr] = Field(default_factory=list)
     artifact_references: list[NonEmptyStr] = Field(default_factory=list)
+    ledger_entry: BacktestRunLedgerEntry | None = None
+    ledger_references: list[NonEmptyStr] = Field(default_factory=list)
     failure_reason: NonEmptyStr | None = None
     additional_fields: dict[str, Any] = Field(default_factory=dict)

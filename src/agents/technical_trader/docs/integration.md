@@ -83,6 +83,8 @@ class BacktestEngine(Protocol):
 
 The request contains:
 
+- code-owned workflow-run, round, attempt, universe, and evaluation-policy
+  context;
 - an exact `candidate.executor_id` from the engine registry;
 - exact codeable rule fields documenting what that executor must implement;
 - computed specialty evidence IDs;
@@ -96,7 +98,14 @@ The request contains:
 The engine must return
 `computed_by="deterministic_backtest_engine"`. The Technical Trader rejects
 other values and rejects metric interpretations that cite metrics absent from
-the engine result.
+the engine result. The shared engine also attaches one `BacktestRunLedgerEntry`
+to every successful or failed result. A storage adapter may persist that entry
+through `BacktestRunLedgerSink`; persistence references are returned separately
+and persistence failure does not erase the in-result audit record.
+Every engine execution receives an attempt-unique identity derived from its
+workflow-run ID, request ID, and lineage attempt. The workflow-run identity also
+remains a separate ledger field for grouping all Backtest Engine attempts in
+one research run.
 
 Construct the runtime with the engine's actual executor IDs:
 
@@ -126,6 +135,7 @@ Backtest Engine integration details still to confirm:
 - shared held-out/walk-forward policy;
 - transaction-cost configuration;
 - artifact references; and
+- durable run-ledger storage and round-audit aggregation; and
 - failure/status conventions.
 
 ## 4. Risk handoff

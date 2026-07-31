@@ -420,6 +420,7 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             request_id=backtest_lineage.task_id,
             trader_id=self.trader_id,
             lineage=backtest_lineage,
+            execution_context=request.execution_context,
             as_of_date=request.mandate.as_of_date,
             candidate=candidate,
             plan=plan,
@@ -495,6 +496,13 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             raise AgentOutputValidationError(
                 "Candidate must use at least one non-fallback support level at "
                 "or below the latest close, or resistance level at or above it."
+            )
+        cited_levels = referenced.intersection(technical_analysis.level_ids())
+        unreliable_cited_levels = sorted(cited_levels - reliable_levels)
+        if unreliable_cited_levels:
+            raise AgentOutputValidationError(
+                "Candidate may not cite fallback or wrong-side support/"
+                "resistance levels: " + ", ".join(unreliable_cited_levels)
             )
 
     @staticmethod

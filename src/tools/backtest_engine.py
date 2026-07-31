@@ -20,7 +20,7 @@ import asyncio
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from math import isfinite, sqrt
 from statistics import fmean, stdev
 from typing import Any, Protocol, runtime_checkable
@@ -28,12 +28,134 @@ from typing import Any, Protocol, runtime_checkable
 from protocols import (
     BacktestRequest,
     BacktestResult,
+    BacktestRunLedgerEntry,
     BacktestStatus,
 )
 
 
 ENGINE_NAME = "fractional_ai_workforce_backtest_engine"
-ENGINE_VERSION = "0.3.0"
+ENGINE_VERSION = "0.5.0"
+BACKTEST_METRIC_DEFINITIONS: Mapping[str, Mapping[str, str]] = {
+    "initial_equity": {
+        "description": "First value in the simulated equity curve.",
+        "formula": "equity_curve[0].value",
+        "unit": "portfolio currency",
+        "annualization": "none",
+        "availability": "Requires at least two equity observations.",
+    },
+    "final_equity": {
+        "description": "Last value in the simulated equity curve.",
+        "formula": "equity_curve[-1].value",
+        "unit": "portfolio currency",
+        "annualization": "none",
+        "availability": "Requires at least two equity observations.",
+    },
+    "total_return": {
+        "description": (
+            "Net simple return over the complete evaluated equity curve."
+        ),
+        "formula": "final_equity / initial_equity - 1",
+        "unit": "decimal return",
+        "annualization": "none",
+        "availability": "Requires positive initial equity.",
+    },
+    "annualized_return": {
+        "description": (
+            "Geometrically annualized return over the observed periods."
+        ),
+        "formula": (
+            "(final_equity / initial_equity) "
+            "** (annualization_factor / observed_periods) - 1"
+        ),
+        "unit": "decimal return per year",
+        "annualization": (
+            "Uses ExecutionAssumptions.annualization_factor; a non-positive "
+            "final equity is reported as -1."
+        ),
+        "availability": "Requires positive initial equity and at least one period.",
+    },
+    "max_drawdown": {
+        "description": (
+            "Largest peak-to-trough decline in the evaluated equity curve."
+        ),
+        "formula": "minimum(equity / running_peak - 1)",
+        "unit": "decimal return",
+        "annualization": "none",
+        "availability": "Requires at least two equity observations.",
+    },
+    "annualized_volatility": {
+        "description": (
+            "Annualized sample standard deviation of simple period returns."
+        ),
+        "formula": (
+            "sample_stdev(simple_period_returns) "
+            "* sqrt(annualization_factor)"
+        ),
+        "unit": "decimal return per year",
+        "annualization": (
+            "Square-root-of-time scaling using "
+            "ExecutionAssumptions.annualization_factor."
+        ),
+        "availability": (
+            "Reported as null when fewer than two period returns exist."
+        ),
+    },
+    "sharpe_ratio": {
+        "description": (
+            "Annualized arithmetic excess-return Sharpe ratio."
+        ),
+        "formula": (
+            "(mean(simple_period_returns) - "
+            "annual_risk_free_rate / annualization_factor) "
+            "/ sample_stdev(simple_period_returns) "
+            "* sqrt(annualization_factor)"
+        ),
+        "unit": "dimensionless ratio",
+        "annualization": (
+            "Uses linear per-period conversion of the configured annual "
+            "risk-free rate and square-root-of-time scaling."
+        ),
+        "availability": (
+            "Reported as null with fewer than two returns or zero return "
+            "standard deviation."
+        ),
+    },
+    "transaction_count": {
+        "description": (
+            "Number of simulated executions, including terminal liquidation "
+            "when configured."
+        ),
+        "formula": "count(transactions)",
+        "unit": "executions",
+        "annualization": "none",
+        "availability": "Always available for a successful simulation.",
+    },
+    "transaction_costs": {
+        "description": (
+            "Total simulated commissions plus modeled slippage cost."
+        ),
+        "formula": "sum(transaction.commission + transaction.slippage_cost)",
+        "unit": "portfolio currency",
+        "annualization": "none",
+        "availability": "Always available for a successful simulation.",
+    },
+    "turnover": (
+        {
+            "description": (
+                "Gross traded notional across all simulated executions divided "
+                "by configured initial capital."
+            ),
+            "formula": "sum(transaction.notional) / initial_capital",
+            "unit": "multiple of initial capital",
+            "annualization": "none",
+            "availability": "Always available for a successful simulation.",
+            "interpretation_note": (
+                "This is not average-equity-normalized or annualized portfolio "
+                "turnover."
+            ),
+        }
+    ),
+}
 DEFAULT_AVAILABLE_FIELDS = (
     "symbol",
     "timestamp",
@@ -184,6 +306,7 @@ class BacktestDataResolver(Protocol):
 
     async def resolve(self, request: BacktestRequest) -> ResolvedBacktestData:
         """Return validated bars corresponding to request.data_references."""
+        raise NotImplementedError
 
 
 @runtime_checkable
@@ -195,6 +318,7 @@ class StrategySession(Protocol):
         context: StrategyEvaluationContext,
     ) -> Mapping[str, float] | None:
         """Return desired portfolio weights, or None to keep current positions."""
+        raise NotImplementedError
 
 
 @runtime_checkable
@@ -205,6 +329,7 @@ class StrategyExecutor(Protocol):
 
     def create_session(self, request: BacktestRequest) -> StrategySession:
         """Create request-local state so concurrent runs cannot interfere."""
+        raise NotImplementedError
 
 
 @runtime_checkable
@@ -217,6 +342,19 @@ class BacktestArtifactSink(Protocol):
         artifacts: BacktestArtifacts,
     ) -> Sequence[str]:
         """Return immutable artifact references."""
+        raise NotImplementedError
+
+
+@runtime_checkable
+class BacktestRunLedgerSink(Protocol):
+    """Persist completed run-ledger entries without choosing a backend."""
+
+    async def append(
+        self,
+        entry: BacktestRunLedgerEntry,
+    ) -> Sequence[str]:
+        """Return immutable references for the persisted ledger entry."""
+        raise NotImplementedError
 
 
 @runtime_checkable
@@ -225,6 +363,7 @@ class BacktestEngine(Protocol):
 
     async def run(self, request: BacktestRequest) -> BacktestResult:
         """Return reproducible metrics; an LLM may not manufacture them."""
+        raise NotImplementedError
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,6 +497,7 @@ class DeterministicBacktestEngine:
         data_resolver: BacktestDataResolver,
         strategy_executors: Iterable[StrategyExecutor],
         artifact_sink: BacktestArtifactSink | None = None,
+        ledger_sink: BacktestRunLedgerSink | None = None,
         engine_name: str = ENGINE_NAME,
         engine_version: str = ENGINE_VERSION,
     ) -> None:
@@ -376,6 +516,7 @@ class DeterministicBacktestEngine:
         self._data_resolver = data_resolver
         self._strategy_executors = registry
         self._artifact_sink = artifact_sink
+        self._ledger_sink = ledger_sink
         self._engine_name = engine_name.strip()
         self._engine_version = engine_version.strip()
 
@@ -458,8 +599,10 @@ class DeterministicBacktestEngine:
                         f"computed metrics: {type(exc).__name__}: {exc}"
                     )
 
-            return BacktestResult(
-                result_id=f"{request.request_id}.result",
+            execution_attempt_id = self._execution_attempt_id(request)
+            result = BacktestResult(
+                result_id=f"{execution_attempt_id}.result",
+                execution_attempt_id=execution_attempt_id,
                 request_id=request.request_id,
                 candidate_id=request.candidate.candidate_id,
                 status=BacktestStatus.SUCCEEDED,
@@ -468,8 +611,8 @@ class DeterministicBacktestEngine:
                 metrics=metrics,
                 out_of_sample_metrics=out_of_sample_metrics,
                 benchmark_metrics=benchmark_metrics,
-                warnings=tuple(_deduplicate(warnings)),
-                artifact_references=artifact_references,
+                warnings=list(_deduplicate(warnings)),
+                artifact_references=list(artifact_references),
                 additional_fields={
                     "executor_id": executor_id,
                     "applied_assumptions": asdict(assumptions),
@@ -477,23 +620,48 @@ class DeterministicBacktestEngine:
                     "bar_count": len(bars),
                     "symbols": tuple(sorted({bar.symbol for bar in bars})),
                     "transaction_count": len(simulation.transactions),
+                    "metric_definitions": {
+                        metric_name: dict(definition)
+                        for metric_name, definition in (
+                            BACKTEST_METRIC_DEFINITIONS.items()
+                        )
+                    },
                 },
+            )
+            return await self._record_ledger_entry(
+                request=request,
+                result=result,
+                resolved_symbols=tuple(
+                    sorted({bar.symbol for bar in bars})
+                ),
+                resolved_start_time=bars[0].timestamp,
+                resolved_end_time=bars[-1].timestamp,
+                data_references=resolved.data_references,
             )
         except asyncio.CancelledError:
             raise
         except BacktestDataError as exc:
-            return self._failure_result(
-                request,
-                BacktestStatus.INSUFFICIENT_DATA,
-                str(exc),
-                warnings,
+            return await self._record_ledger_entry(
+                request=request,
+                result=self._failure_result(
+                    request,
+                    BacktestStatus.INSUFFICIENT_DATA,
+                    str(exc),
+                    warnings,
+                ),
             )
         except Exception as exc:
-            return self._failure_result(
+            result = self._failure_result(
                 request,
                 BacktestStatus.FAILED,
                 f"{type(exc).__name__}: {exc}",
                 warnings,
+            )
+            if not isinstance(request, BacktestRequest):
+                return result
+            return await self._record_ledger_entry(
+                request=request,
+                result=result,
             )
 
     def _failure_result(
@@ -509,15 +677,186 @@ class DeterministicBacktestEngine:
             "unknown_candidate",
         )
         request_id = getattr(request, "request_id", "unknown_request")
+        execution_attempt_id = (
+            self._execution_attempt_id(request)
+            if isinstance(request, BacktestRequest)
+            else None
+        )
         return BacktestResult(
-            result_id=f"{request_id}.result",
+            result_id=(
+                f"{execution_attempt_id}.result"
+                if execution_attempt_id is not None
+                else f"{request_id}.result"
+            ),
+            execution_attempt_id=execution_attempt_id,
             request_id=request_id,
             candidate_id=candidate_id,
             status=status,
             engine_name=self._engine_name,
             engine_version=self._engine_version,
-            warnings=tuple(_deduplicate(warnings)),
+            warnings=list(_deduplicate(warnings)),
             failure_reason=reason or type(reason).__name__,
+        )
+
+    async def _record_ledger_entry(
+        self,
+        *,
+        request: BacktestRequest,
+        result: BacktestResult,
+        resolved_symbols: Sequence[str] = (),
+        resolved_start_time: datetime | None = None,
+        resolved_end_time: datetime | None = None,
+        data_references: Sequence[str] | None = None,
+    ) -> BacktestResult:
+        """Attach an audit record and optionally persist it.
+
+        Ledger persistence is deliberately non-fatal: the returned result still
+        carries the complete record when no storage adapter is available or the
+        configured sink fails.
+        """
+
+        entry = self._build_ledger_entry(
+            request=request,
+            result=result,
+            resolved_symbols=resolved_symbols,
+            resolved_start_time=resolved_start_time,
+            resolved_end_time=resolved_end_time,
+            data_references=data_references,
+        )
+        ledger_references: tuple[str, ...] = ()
+        if self._ledger_sink is not None:
+            try:
+                raw_references = await self._ledger_sink.append(entry)
+                if isinstance(raw_references, (str, bytes)):
+                    raise TypeError(
+                        "Ledger sink must return a sequence of references, "
+                        "not a string."
+                    )
+                normalized_references = tuple(
+                    str(reference).strip() for reference in raw_references
+                )
+                if any(not reference for reference in normalized_references):
+                    raise ValueError(
+                        "Ledger sink returned an empty reference."
+                    )
+                ledger_references = normalized_references
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                persistence_warning = (
+                    "Run-ledger persistence failed without invalidating the "
+                    f"backtest result: {type(exc).__name__}: {exc}"
+                )
+                result = BacktestResult.model_validate(
+                    {
+                        **result.model_dump(mode="python"),
+                        "warnings": tuple(
+                            _deduplicate(
+                                [*result.warnings, persistence_warning]
+                            )
+                        ),
+                    }
+                )
+                entry = self._build_ledger_entry(
+                    request=request,
+                    result=result,
+                    resolved_symbols=resolved_symbols,
+                    resolved_start_time=resolved_start_time,
+                    resolved_end_time=resolved_end_time,
+                    data_references=data_references,
+                )
+
+        return BacktestResult.model_validate(
+            {
+                **result.model_dump(mode="python"),
+                "ledger_entry": entry,
+                "ledger_references": ledger_references,
+            }
+        )
+
+    @staticmethod
+    def _build_ledger_entry(
+        *,
+        request: BacktestRequest,
+        result: BacktestResult,
+        resolved_symbols: Sequence[str],
+        resolved_start_time: datetime | None,
+        resolved_end_time: datetime | None,
+        data_references: Sequence[str] | None,
+    ) -> BacktestRunLedgerEntry:
+        execution_attempt_id = (
+            result.execution_attempt_id
+            or DeterministicBacktestEngine._execution_attempt_id(request)
+        )
+        additional_fields: dict[str, Any] = {
+            "as_of_date": request.as_of_date,
+            "asset_eligibility_logic": (
+                request.candidate.asset_eligibility_logic
+            ),
+            "held_out_evaluation_required": (
+                request.plan.held_out_evaluation_required
+            ),
+            "requested_metrics": tuple(request.plan.requested_metrics),
+            "validation_split": (
+                request.plan.validation_split.model_dump(mode="python")
+                if request.plan.validation_split is not None
+                else None
+            ),
+            "applied_assumptions": result.additional_fields.get(
+                "applied_assumptions"
+            ),
+            "metric_definitions": result.additional_fields.get(
+                "metric_definitions"
+            ),
+        }
+
+        return BacktestRunLedgerEntry(
+            ledger_entry_id=f"{execution_attempt_id}.ledger",
+            recorded_at=datetime.now(timezone.utc),
+            run_id=execution_attempt_id,
+            workflow_run_id=request.execution_context.run_id,
+            workflow_id=request.lineage.workflow_id,
+            round_number=request.execution_context.round_number,
+            task_id=request.lineage.task_id,
+            attempt=request.lineage.attempt,
+            request_id=request.request_id,
+            result_id=result.result_id,
+            trader_id=request.trader_id,
+            candidate_id=request.candidate_id,
+            strategy_name=request.candidate.strategy_name,
+            executor_id=request.executor_id,
+            parameters=dict(request.candidate.parameters),
+            canonical_universe_id=(
+                request.execution_context.canonical_universe_id
+            ),
+            evaluation_policy_id=(
+                request.execution_context.evaluation_policy_id
+            ),
+            resolved_symbols=list(resolved_symbols),
+            data_references=list(data_references or request.data_references),
+            requested_start_date=request.plan.requested_start_date,
+            requested_end_date=request.plan.requested_end_date,
+            resolved_start_time=resolved_start_time,
+            resolved_end_time=resolved_end_time,
+            benchmark=request.plan.benchmark,
+            status=result.status,
+            metrics=dict(result.metrics),
+            out_of_sample_metrics=dict(result.out_of_sample_metrics),
+            benchmark_metrics=dict(result.benchmark_metrics),
+            warnings=list(result.warnings),
+            constraint_violations=list(result.constraint_violations),
+            artifact_references=list(result.artifact_references),
+            failure_reason=result.failure_reason,
+            additional_fields=additional_fields,
+        )
+
+    @staticmethod
+    def _execution_attempt_id(request: BacktestRequest) -> str:
+        """Return the stable, retry-safe identity for one engine execution."""
+
+        return (
+            f"{request.execution_context.run_id}.{request.request_id}."
+            f"attempt-{request.lineage.attempt}"
         )
 
     @staticmethod

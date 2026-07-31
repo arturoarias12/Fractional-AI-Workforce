@@ -42,6 +42,9 @@ class WorkflowInput(TypedDict, total=False):
 
     pm_mandate: Required[JsonMapping]
     active_specialists: tuple[str, ...]
+    run_id: str
+    canonical_universe_id: str | None
+    evaluation_policy_id: str | None
 
 
 class WorkflowState(TypedDict, total=False):
@@ -52,6 +55,7 @@ class WorkflowState(TypedDict, total=False):
     """
 
     workflow_id: str
+    run_id: str
     round_number: int
     max_rounds: int
     as_of_date: str

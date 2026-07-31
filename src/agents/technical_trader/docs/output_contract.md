@@ -10,6 +10,9 @@
   stage.
 - `trader_id`: `technical_trader_agent` for this agent.
 - `lineage`: workflow, task, parent, source, and attempt identifiers.
+- `backtest_request.execution_context`: code-owned workflow-run, round,
+  attempt, universe, and evaluation-policy references propagated from the
+  graph/runtime; the model cannot author these values.
 - `mandate_reference`: stable PM mandate identifiers and as-of date.
 
 ## Research evidence
@@ -37,8 +40,9 @@ level on the correct side of the latest close.
 
 ## Evaluation
 
-- `backtest_result`: immutable deterministic-engine status, metrics, warnings,
-  violations, and artifact references.
+- `backtest_result`: immutable deterministic-engine status, attempt-unique
+  identity, metrics, deterministic metric definitions, warnings, violations,
+  ledger entry, and artifact references.
 - `backtest_request.plan.validation_split`: fixed held-out window supplied by
   injected shared policy, never selected by the Technical Trader model.
 - `interpretation`: LLM explanation restricted to metrics actually returned by

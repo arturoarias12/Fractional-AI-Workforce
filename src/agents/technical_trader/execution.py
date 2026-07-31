@@ -11,6 +11,7 @@ DEFAULT_MODEL_CALL_TIMEOUT_SECONDS = 45.0
 DEFAULT_DATA_SERVICE_TIMEOUT_SECONDS = 60.0
 DEFAULT_BACKTEST_TIMEOUT_SECONDS = 90.0
 DEFAULT_TRADER_TIMEOUT_SECONDS = MAX_TIMEOUT_SECONDS
+EXPECTED_MODEL_CALLS_PER_TRADER_RUN = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,4 +62,18 @@ class ExecutionPolicy:
             raise ValueError(
                 "backtest_timeout_seconds must be less than "
                 "trader_timeout_seconds."
+            )
+
+        aggregate_component_budget = (
+            self.model_call_timeout_seconds
+            * EXPECTED_MODEL_CALLS_PER_TRADER_RUN
+            + self.data_service_timeout_seconds
+            + self.backtest_timeout_seconds
+        )
+        if aggregate_component_budget >= self.trader_timeout_seconds:
+            raise ValueError(
+                "The aggregate component deadline budget must be less than "
+                "trader_timeout_seconds so orchestration retains time to "
+                "validate and package the result; configured aggregate is "
+                f"{aggregate_component_budget:g} seconds."
             )

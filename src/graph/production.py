@@ -57,6 +57,7 @@ from .nodes import (
 )
 from .routing import PostDecisionRoute, route_after_pm_decision
 from .state import WorkflowInput, WorkflowState
+from .workflow import planned_workflow
 
 
 PRODUCTION_GRAPH_NAME = "fractional_ai_workforce_research"
@@ -190,7 +191,9 @@ def compile_production_workflow(
         },
     )
 
-    return builder.compile(checkpointer=checkpointer, name=name)
+    compiled = builder.compile(checkpointer=checkpointer, name=name)
+    _assert_compiled_topology_matches_blueprint(compiled)
+    return compiled
 
 
 def _make_prepare_round_node(max_rounds: int) -> GraphNode:
@@ -241,8 +244,22 @@ def _prepare_round(
         )
         for trader_id in TRADER_IDS
     }
+    trader_branches = {
+        str(trader_id): {
+            "trader_id": str(trader_id),
+            "active": str(trader_id) in active_specialists,
+            "status": (
+                RunStatus.PENDING.value
+                if str(trader_id) in active_specialists
+                else RunStatus.CANCELLED.value
+            ),
+            "failures": (),
+        }
+        for trader_id in TRADER_IDS
+    }
     return {
         "workflow_id": mandate.workflow_id,
+        "run_id": _run_id_from_state(state, mandate.workflow_id),
         "round_number": round_number,
         "max_rounds": max_rounds,
         "as_of_date": mandate.as_of_date.isoformat(),
@@ -251,7 +268,7 @@ def _prepare_round(
         "technical_trader_package": None,
         "fundamental_trader_package": None,
         "quant_trader_package": None,
-        "trader_branches": {},
+        "trader_branches": trader_branches,
         "trader_packages": {},
         "risk_review_request": None,
         "risk_review_response": None,
@@ -714,8 +731,14 @@ def _pm_review_payload(state: Mapping[str, Any]) -> dict[str, Any]:
         decision.value
         for decision in PMDecisionType
         if not (
-            decision is PMDecisionType.REQUEST_ANOTHER_ROUND
-            and round_number >= max_rounds
+            (
+                decision is PMDecisionType.REQUEST_ANOTHER_ROUND
+                and round_number >= max_rounds
+            )
+            or (
+                decision is PMDecisionType.SELECT
+                and not surviving_ids
+            )
         )
     ]
     return {
@@ -829,10 +852,46 @@ def _route_after_memory_write(
         and _positive_round_number(state.get("round_number", 1))
         >= _positive_limit(state.get("max_rounds"))
     ):
-        raise GraphAssemblyError(
-            "PM requested another round after the configured round limit."
-        )
+        # The normal PM validator prevents this state. If an injected PM node
+        # violates the contract, terminate safely rather than crashing after
+        # Memory has already recorded the decision.
+        return PostDecisionRoute.WRITE_MEMORY_AND_FINISH
     return route
+
+
+def _assert_compiled_topology_matches_blueprint(compiled: Any) -> None:
+    """Fail compilation if the public blueprint drifts from LangGraph."""
+
+    blueprint = planned_workflow()
+    drawable = compiled.get_graph()
+    actual_nodes = {
+        str(node_id)
+        for node_id in drawable.nodes
+        if str(node_id) not in {START, END}
+    }
+    expected_nodes = set(blueprint.node_ids)
+    actual_edges = {
+        (str(edge.source), str(edge.target))
+        for edge in drawable.edges
+        if str(edge.source) != START and str(edge.target) != END
+    }
+    expected_edges = {
+        (edge.source, edge.target)
+        for edge in blueprint.edges
+    }
+    if actual_nodes != expected_nodes or actual_edges != expected_edges:
+        missing_nodes = sorted(expected_nodes - actual_nodes)
+        unexpected_nodes = sorted(actual_nodes - expected_nodes)
+        missing_edges = sorted(expected_edges - actual_edges)
+        unexpected_edges = sorted(actual_edges - expected_edges)
+        raise GraphAssemblyError(
+            "The executable graph and framework-neutral workflow blueprint "
+            "have drifted; "
+            f"missing_nodes={missing_nodes}, "
+            f"unexpected_nodes={unexpected_nodes}, "
+            f"missing_edges={missing_edges}, "
+            f"unexpected_edges={unexpected_edges}."
+        )
 
 
 async def _invoke_node(
@@ -872,6 +931,19 @@ def _mandate_from_state(state: Mapping[str, Any]) -> PMMandate:
         raise GraphAssemblyError(
             f"Graph state contains an invalid pm_mandate: {exc}"
         ) from exc
+
+
+def _run_id_from_state(
+    state: Mapping[str, Any],
+    workflow_id: str,
+) -> str:
+    raw_run_id = state.get("run_id")
+    if raw_run_id is None:
+        return workflow_id
+    run_id = str(raw_run_id).strip()
+    if not run_id:
+        raise GraphAssemblyError("run_id must be non-empty when supplied.")
+    return run_id
 
 
 def _validate_package_identity(

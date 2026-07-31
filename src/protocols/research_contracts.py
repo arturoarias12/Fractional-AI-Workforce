@@ -12,7 +12,12 @@ from .backtest import (
     BacktestStatus,
     CandidateRuleSpecification,
 )
-from .common import RunStatus, SpecialistId, TaskLineage
+from .common import (
+    ResearchExecutionContext,
+    RunStatus,
+    SpecialistId,
+    TaskLineage,
+)
 from .data import DataArtifact, DataProvenance, DataRequest, DataResponse
 from .mandate import PMMandate
 from .memory import MemoryContext, MemoryRecord
@@ -47,6 +52,7 @@ __all__ = [
     "PMMandate",
     "ReportingOutput",
     "ReportingRequest",
+    "ResearchExecutionContext",
     "RiskCandidateDecision",
     "RiskCheckId",
     "RiskCheckResult",

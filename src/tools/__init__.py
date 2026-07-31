@@ -1,6 +1,7 @@
 """Deterministic shared backtesting interfaces and implementation."""
 
 from .backtest_engine import (
+    BACKTEST_METRIC_DEFINITIONS,
     BacktestArtifactSink,
     BacktestArtifacts,
     BacktestConfigurationError,
@@ -9,6 +10,7 @@ from .backtest_engine import (
     BacktestEngine,
     BacktestEngineError,
     BacktestExecutionError,
+    BacktestRunLedgerSink,
     DeterministicBacktestEngine,
     EquityPoint,
     ExecutionAssumptions,
@@ -22,6 +24,7 @@ from .backtest_engine import (
 )
 
 __all__ = [
+    "BACKTEST_METRIC_DEFINITIONS",
     "BacktestArtifactSink",
     "BacktestArtifacts",
     "BacktestConfigurationError",
@@ -30,6 +33,7 @@ __all__ = [
     "BacktestEngine",
     "BacktestEngineError",
     "BacktestExecutionError",
+    "BacktestRunLedgerSink",
     "DeterministicBacktestEngine",
     "EquityPoint",
     "ExecutionAssumptions",

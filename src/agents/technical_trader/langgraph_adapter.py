@@ -26,6 +26,11 @@ class TechnicalTraderGraphState(TypedDict, total=False):
     """Checkpoint-safe state owned only by the compatibility subgraph."""
 
     pm_mandate: Required[dict[str, Any]]
+    run_id: str
+    round_number: int
+    trader_attempt: int
+    canonical_universe_id: str | None
+    evaluation_policy_id: str | None
     technical_trader_package: dict[str, Any]
 
 
@@ -46,7 +51,9 @@ def compile_technical_trader_node(
     production workflow or persistence owner must provide it.
     """
 
-    builder = StateGraph(state_schema=TechnicalTraderGraphState)
+    # LangGraph intentionally accepts multiple callable state shapes. Keep the
+    # builder dynamic while this adapter's public node boundary remains typed.
+    builder: Any = StateGraph(state_schema=TechnicalTraderGraphState)
     builder.add_node(TECHNICAL_TRADER_NODE, node)
     builder.add_edge(START, TECHNICAL_TRADER_NODE)
     builder.add_edge(TECHNICAL_TRADER_NODE, END)

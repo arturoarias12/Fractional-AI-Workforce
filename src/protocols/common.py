@@ -84,6 +84,16 @@ class MandateReference(ContractModel):
     as_of_date: date
 
 
+class ResearchExecutionContext(ContractModel):
+    """Code-owned run context propagated unchanged across agent/tool calls."""
+
+    run_id: NonEmptyStr
+    round_number: int = Field(ge=1)
+    attempt: int = Field(default=1, ge=1)
+    canonical_universe_id: NonEmptyStr | None = None
+    evaluation_policy_id: NonEmptyStr | None = None
+
+
 class TaskLineage(ContractModel):
     """Code-owned correlation data for one task and its child operations."""
 
