@@ -22,12 +22,22 @@ class ReportingAgentImpl(ReportingAgent):
 
         comparison = self._build_comparison(candidates, request.risk_response)
 
-        memo = await self._generate_memo(candidates, comparison)
+        memo = await self._generate_memo(candidates, comparison)  # TODO
 
-        # return ReportingOutput()
-        raise NotImplementedError
+        return ReportingOutput(
+            output_id="",  # TODO
+            request_id=request.request_id,
+            surviving_candidate_ids=tuple(
+                candidate.candidate_id
+                for candidate in candidates
+                if candidate.candidate_id is not None
+            ),
+            strategy_memo_reference=None,  # TODO
+            comparison={},  # TODO
+            combination_logic_implemented=False,
+        )
 
-    def _collect_candidates(self, request):
+    def _collect_candidates(self, request: ReportingRequest):
         raise NotImplementedError
 
     def _build_comparison(self, candidates, risk_response):
