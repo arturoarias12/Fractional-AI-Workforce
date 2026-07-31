@@ -2,11 +2,11 @@
   "schema_version": "0.1.0",
   "agent_id": "quant_trader_agent",
   "display_name": "Quant Trader Agent",
-  "description": "Dynamically proposes quantitative strategies from point-in-time statistical and cross-asset evidence.",
-  "version": "0.1.0",
+  "description": "Dynamically proposes cross-asset statistical mean-reversion strategies from point-in-time correlation and half-life evidence, then hands them to the shared deterministic Backtest Engine for evaluation.",
+  "version": "0.2.0",
   "role_type": "specialist",
   "hireable": true,
-  "implementation_status": "placeholder",
+  "implementation_status": "prototype",
   "input_contract": "PMMandate",
   "output_contract": "TraderStrategyPackage",
   "capabilities": [
@@ -16,9 +16,15 @@
     "deterministic_backtest_interpretation"
   ],
   "required_dependencies": [
-    "model_client",
     "data_service",
-    "backtest_engine"
+    "backtest_engine",
+    "validation_split_policy"
   ],
-  "owner": "unconfirmed"
+  "owner": "Shaurya",
+  "implementation_notes": [
+    "src/agents/quant_trader implements agents.base.TraderAgent structurally; see docs/quant_trader.md for the full design.",
+    "Registers strategy executor 'quant_trader.cross_asset_spread_mean_reversion.v1' with tools.backtest_engine.",
+    "data_service and validation_split_policy are still provisional team-owned boundaries (docs/implementation_boundaries.md); src/agents/quant_trader/examples contains dev-only static stand-ins used for local testing only, not for production wiring.",
+    "Interpretation is currently template-generated (interpretation.py), not model-authored; no model_client dependency is wired in yet."
+  ]
 }
