@@ -1,4 +1,4 @@
-"""Provisional shared-service interfaces; neither service is implemented here.
+"""Replaceable shared-service interfaces used by the Technical Trader.
 
 Adapters should be expected to change when the shared Data and Backtest
 contracts are finalized. Keeping both dependencies behind Protocols isolates
@@ -9,8 +9,15 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from .models.backtest import BacktestRequest, BacktestResult
-from .models.data import DataRequest, DataResponse
+from protocols import (
+    BacktestPlanDraft,
+    BacktestRequest,
+    BacktestResult,
+    DataRequest,
+    DataResponse,
+    TraderTask,
+    ValidationSplit,
+)
 
 
 @runtime_checkable
@@ -23,3 +30,21 @@ class DataService(Protocol):
 class BacktestEngine(Protocol):
     async def run(self, request: BacktestRequest) -> BacktestResult:
         """Evaluate a candidate using deterministic code."""
+
+
+@runtime_checkable
+class ValidationSplitPolicy(Protocol):
+    """Supply the shared fixed held-out window to a trader.
+
+    This boundary deliberately contains no Technical Trader default. The same
+    policy can be injected into Technical, Fundamental, and Quant traders.
+    """
+
+    def resolve(
+        self,
+        *,
+        task: TraderTask,
+        plan: BacktestPlanDraft,
+        data_response: DataResponse,
+    ) -> ValidationSplit:
+        """Return a deterministic window ending no later than ``as_of_date``."""

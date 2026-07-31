@@ -1,6 +1,13 @@
-"""Public Technical Trader, service, tool, and handoff schema exports."""
+"""Technical-lens models plus compatibility exports of shared contracts.
 
-from .backtest import (
+Shared contract classes are defined only in :mod:`protocols`. They remain
+re-exported here temporarily so existing Technical Trader integrations do not
+break during migration.
+"""
+
+from protocols import (
+    BacktestInterpretationDraft,
+    BacktestPlan,
     BacktestPlanDraft,
     BacktestRequest,
     BacktestResult,
@@ -8,30 +15,31 @@ from .backtest import (
     CandidateProposalDraft,
     CandidateRuleDraft,
     CandidateRuleSpecification,
-)
-from .common import (
     ConfidenceAssessment,
     ConfidenceLevel,
-    MandateReference,
-    TaskLineage,
-    TraderRunStatus,
-    TraderType,
-)
-from .data import (
+    ConstraintCheckStatus,
     DataArtifact,
     DataCategory,
     DataFieldRequirement,
     DataProvenance,
     DataRequest,
     DataResponse,
+    DataUsageSummary,
+    MandateConstraintAssessment,
+    MandateReference,
+    MetricInterpretation,
+    PMMandate,
+    RunStatus,
+    SpecialistId,
+    TaskLineage,
+    TraderFailure,
+    TraderResearchPlanDraft,
+    TraderStrategyPackage,
+    TraderTask,
+    ValidationSplit,
 )
-from .hireability import (
-    AgentDependency,
-    DependencyConfirmationStatus,
-    HireableTechnicalTraderCard,
-    technical_trader_agent_card,
-)
-from .mandate import PMMandate
+
+from .hireability import technical_trader_agent_card
 from .technical_analysis import (
     AssetTechnicalAnalysis,
     ChartPatternConfig,
@@ -47,22 +55,15 @@ from .technical_analysis import (
     SupportResistanceLevel,
     TechnicalAnalysisReport,
 )
-from .trader import (
-    BacktestInterpretationDraft,
-    ConstraintCheckStatus,
-    DataUsageSummary,
-    MandateConstraintAssessment,
-    MetricInterpretation,
-    TraderFailure,
-    TraderResearchPlanDraft,
-    TraderStrategyPackage,
-    TraderTask,
-)
+
+# Former Technical-only names now point at the canonical shared enums.
+TraderRunStatus = RunStatus
+TraderType = SpecialistId
 
 __all__ = [
     "AssetTechnicalAnalysis",
-    "AgentDependency",
     "BacktestInterpretationDraft",
+    "BacktestPlan",
     "BacktestPlanDraft",
     "BacktestRequest",
     "BacktestResult",
@@ -84,8 +85,6 @@ __all__ = [
     "DataRequest",
     "DataResponse",
     "DataUsageSummary",
-    "DependencyConfirmationStatus",
-    "HireableTechnicalTraderCard",
     "MandateConstraintAssessment",
     "MandateReference",
     "MetricInterpretation",
@@ -95,6 +94,8 @@ __all__ = [
     "PriceBar",
     "PriceLevelKind",
     "PriceSeries",
+    "RunStatus",
+    "SpecialistId",
     "SupportResistanceConfig",
     "SupportResistanceLevel",
     "TaskLineage",
@@ -105,5 +106,6 @@ __all__ = [
     "TraderStrategyPackage",
     "TraderTask",
     "TraderType",
+    "ValidationSplit",
     "technical_trader_agent_card",
 ]

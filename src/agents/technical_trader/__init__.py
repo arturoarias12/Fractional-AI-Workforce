@@ -1,7 +1,7 @@
-"""Hireable Technical Trader with provisional shared-service interfaces."""
+"""Hireable Technical Trader with replaceable integration interfaces."""
 
 from . import models as _models
-from .agents import BaseAgent, TechnicalTraderAgent, TraderAgent
+from .agents import BaseAgent, StagedTraderAgent, TechnicalTraderAgent
 from .errors import (
     AgentInputValidationError,
     AgentOutputValidationError,
@@ -12,7 +12,6 @@ from .errors import (
     ServiceContractError,
     TechnicalAnalysisInputError,
     TechnicalTraderError,
-    TraderAgentsError,
 )
 from .execution import (
     DEFAULT_BACKTEST_TIMEOUT_SECONDS,
@@ -39,7 +38,7 @@ from .runtime import (
     create_technical_trader_runtime,
     make_langgraph_node,
 )
-from .services import BacktestEngine, DataService
+from .services import BacktestEngine, DataService, ValidationSplitPolicy
 from .tools import (
     ArtifactPayloadTechnicalInputAdapter,
     DeterministicTechnicalAnalysisToolkit,
@@ -76,14 +75,14 @@ __all__ = [
     "ModelUsage",
     "NullMetricsSink",
     "ServiceContractError",
+    "StagedTraderAgent",
     "TechnicalAnalysisInputAdapter",
     "TechnicalAnalysisInputError",
     "TechnicalAnalysisToolkit",
     "TechnicalTraderAgent",
     "TechnicalTraderError",
     "TechnicalTraderRuntime",
-    "TraderAgent",
-    "TraderAgentsError",
+    "ValidationSplitPolicy",
     "create_technical_trader_runtime",
     "make_langgraph_node",
 ]

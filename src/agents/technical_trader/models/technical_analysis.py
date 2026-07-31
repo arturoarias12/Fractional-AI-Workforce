@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from .common import ContractModel, NonEmptyStr
+from protocols import ContractModel, NonEmptyStr
 
 
 class PriceBar(ContractModel):
@@ -157,6 +157,26 @@ class TechnicalAnalysisReport(ContractModel):
             level.level_id
             for asset in self.assets
             for level in asset.support_resistance_levels
+        }
+
+    def reliable_level_ids(self) -> set[str]:
+        """Return structural levels that retain their current semantic side."""
+
+        return {
+            level.level_id
+            for asset in self.assets
+            for level in asset.support_resistance_levels
+            if not level.used_range_fallback
+            and (
+                (
+                    level.kind is PriceLevelKind.SUPPORT
+                    and level.price <= asset.last_close
+                )
+                or (
+                    level.kind is PriceLevelKind.RESISTANCE
+                    and level.price >= asset.last_close
+                )
+            )
         }
 
     def evidence_ids(self) -> set[str]:

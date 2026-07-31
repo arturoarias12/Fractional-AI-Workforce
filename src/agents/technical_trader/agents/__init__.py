@@ -2,10 +2,10 @@
 
 from .base import BaseAgent
 from .technical import TechnicalTraderAgent
-from .trader import TraderAgent
+from .trader import StagedTraderAgent
 
 __all__ = [
     "BaseAgent",
+    "StagedTraderAgent",
     "TechnicalTraderAgent",
-    "TraderAgent",
 ]

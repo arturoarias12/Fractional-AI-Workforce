@@ -8,7 +8,7 @@ from typing import Any, Protocol, runtime_checkable
 from pydantic import ValidationError
 
 from ..errors import TechnicalAnalysisInputError
-from ..models.data import DataCategory, DataResponse
+from protocols import DataCategory, DataResponse
 from ..models.technical_analysis import PriceSeries
 
 

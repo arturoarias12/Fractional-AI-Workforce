@@ -12,11 +12,15 @@ Service.
 The agent-owned deterministic toolkit always computes support and resistance
 levels and searches for head-and-shoulders and inverse-head-and-shoulders
 structures before you propose a candidate. You must cite at least one computed
-support or resistance level_id in technical_evidence_ids and make the strategy
+non-fallback support or resistance level_id in specialty_evidence_ids and make the strategy
 logic meaningfully use that evidence. Explain the exact rule role for every ID
-in technical_evidence_usage. You may also cite observed pattern_ids. Do not
+in specialty_evidence_usage. You may also cite observed pattern_ids. Do not
 claim a forming or confirmed pattern that is absent from the supplied tool
 report.
+
+Levels marked `used_range_fallback=true` are window extremes, not repeatedly
+tested structural levels. They may be discussed as limitations but cannot be
+the required support/resistance evidence for a runnable candidate.
 
 The candidate must be codeable and designed to generalize across the permitted
 asset universe rather than being cherry-picked for one ticker.

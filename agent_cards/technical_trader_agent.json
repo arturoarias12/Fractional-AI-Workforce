@@ -3,7 +3,7 @@
   "agent_id": "technical_trader_agent",
   "display_name": "Technical Trader Agent",
   "description": "Technical Trader that dynamically proposes codeable strategies using point-in-time OHLCV and deterministic evidence tools.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "role_type": "specialist",
   "hireable": true,
   "implementation_status": "adapter_integration_pending",
@@ -17,6 +17,8 @@
     "inverse_head_and_shoulders_detection",
     "deterministic_backtest_request",
     "deterministic_backtest_interpretation",
+    "registered_executor_selection",
+    "shared_validation_split_policy",
     "partial_failure_package",
     "correlated_model_usage_metrics",
     "langgraph_single_node_compatibility"
@@ -24,6 +26,7 @@
   "required_dependencies": [
     "model_client",
     "data_service",
-    "backtest_engine"
+    "backtest_engine",
+    "validation_split_policy"
   ]
 }

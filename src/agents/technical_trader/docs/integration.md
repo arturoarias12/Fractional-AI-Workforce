@@ -1,7 +1,10 @@
-# Provisional Integration Guide
+# Integration Guide
 
-The Technical Trader cannot run end to end until three adapters are supplied.
-This is intentional; no fake production dependency is included.
+The Technical Trader cannot run end to end until its real adapters, registered
+executor set, and shared validation policy are supplied.
+
+Cross-component contracts are defined once in `src/protocols`. Agent-local
+models contain only technical-analysis evidence.
 
 ## 1. Model adapter
 
@@ -80,12 +83,13 @@ class BacktestEngine(Protocol):
 
 The request contains:
 
-- exact codeable rule fields;
-- computed technical evidence IDs;
+- an exact `candidate.executor_id` from the engine registry;
+- exact codeable rule fields documenting what that executor must implement;
+- computed specialty evidence IDs;
 - parameters;
 - start/end/frequency preferences;
 - transaction-cost assumptions;
-- requested metrics and held-out requirements;
+- requested metrics and a code-owned validation split;
 - data references; and
 - PM mandate constraints.
 
@@ -94,13 +98,32 @@ The engine must return
 other values and rejects metric interpretations that cite metrics absent from
 the engine result.
 
-Backtest Engine integration details to confirm:
+Construct the runtime with the engine's actual executor IDs:
 
-- executable rule representation;
+```python
+runtime = create_technical_trader_runtime(
+    model_client=model_client,
+    data_service=data_service,
+    backtest_engine=engine,
+    available_executors=engine.registered_executor_ids,
+    validation_split_policy=shared_validation_policy,
+)
+```
+
+An unknown executor is rejected before the engine runs. If no registered
+executor exactly implements the proposed logic, the run settles as partial;
+the system must not backtest a merely similar strategy.
+
+`validation_split_policy` is intentionally injected. The Technical Trader does
+not define the team's train/test ratio or dates, allowing all three traders to
+use the same evaluation policy.
+
+Backtest Engine integration details still to confirm:
+
+- registered executor descriptions and parameter schemas;
 - supported indicator and level semantics;
-- parameter schema;
 - metric names;
-- held-out/walk-forward facilities;
+- shared held-out/walk-forward policy;
 - transaction-cost configuration;
 - artifact references; and
 - failure/status conventions.
@@ -151,8 +174,3 @@ Graph integration details to confirm:
 - retry and checkpoint boundaries;
 - graph-level cancellation; and
 - Risk routing key.
-
-## No runnable demonstration yet
-
-A real demonstration would incorrectly imply final adapter behavior. Add one
-only after the Model, Data, and Backtest contracts are confirmed.

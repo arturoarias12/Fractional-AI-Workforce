@@ -1,11 +1,12 @@
 {
   "package_id": "pm-mandate-example.technical.trader.package",
-  "trader_type": "technical",
+  "trader_id": "technical_trader_agent",
   "lineage": {
     "workflow_id": "workflow-example",
     "task_id": "pm-mandate-example.technical.trader",
     "parent_task_id": "pm-mandate-example",
-    "source_task_id": "pm-mandate-example"
+    "source_task_id": "pm-mandate-example",
+    "attempt": 1
   },
   "mandate_reference": {
     "workflow_id": "workflow-example",
@@ -13,6 +14,7 @@
     "as_of_date": "2026-07-25"
   },
   "status": "failed",
+  "specialty_evidence": {},
   "constraint_assessment": {
     "status": "not_evaluated",
     "mappings": [],

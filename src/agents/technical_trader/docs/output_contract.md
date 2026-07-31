@@ -1,15 +1,15 @@
 # TraderStrategyPackage
 
-`TraderStrategyPackage` is the provisional downstream handoff until the final
-Risk schema is available.
+`TraderStrategyPackage` is the shared downstream handoff defined in
+`protocols.trader`.
 
 ## Identity
 
 - `package_id`: unique package identifier.
 - `candidate_id`: identifier of the generated rule, if the run reached that
   stage.
-- `trader_type`: always `technical` for this agent.
-- `lineage`: workflow, task, parent, and source identifiers.
+- `trader_id`: `technical_trader_agent` for this agent.
+- `lineage`: workflow, task, parent, source, and attempt identifiers.
 - `mandate_reference`: stable PM mandate identifiers and as-of date.
 
 ## Research evidence
@@ -18,25 +18,29 @@ Risk schema is available.
 - `data_request`: point-in-time field and coverage request.
 - `data_usage`: artifact, reference, provenance, limitation, and unavailable
   field summary.
-- `technical_analysis`: code-computed support/resistance and pattern evidence.
+- `specialty_evidence`: lens-specific evidence. Technical Trader stores its
+  code-computed report under `technical_analysis`.
 
 Raw OHLCV payloads are not copied into this summary.
 
 ## Executable candidate
 
 - `candidate_rule`: exact codeable logic, parameters, required fields, mandate
-  handling, technical evidence IDs, and an explicit rule-use explanation for
+  handling, specialty evidence IDs, and an explicit rule-use explanation for
   every cited ID.
-- `backtest_request`: candidate, plan, data references, and mandate constraints
-  sent to the engine.
+- `candidate_rule.executor_id`: an exact registered deterministic executor.
+- `backtest_request`: candidate, finalized plan, data references, and mandate
+  constraints sent to the engine.
 
-No rule becomes Risk-eligible without citing a computed support/resistance
-level.
+No rule becomes Risk-eligible without citing a non-fallback support/resistance
+level on the correct side of the latest close.
 
 ## Evaluation
 
 - `backtest_result`: immutable deterministic-engine status, metrics, warnings,
   violations, and artifact references.
+- `backtest_request.plan.validation_split`: fixed held-out window supplied by
+  injected shared policy, never selected by the Technical Trader model.
 - `interpretation`: LLM explanation restricted to metrics actually returned by
   the engine.
 - `constraint_assessment`: declared mappings and violations requiring Risk
@@ -44,7 +48,7 @@ level.
 
 ## Status and resilience
 
-- `status`: `completed`, `partial`, or `failed`.
+- `status`: settled `completed`, `partial`, or `failed`.
 - `failures`: stage, sanitized diagnostic message, and retryability.
 - `eligible_for_risk_review`: true only for a complete, technically analyzed,
   successfully backtested, interpreted package.

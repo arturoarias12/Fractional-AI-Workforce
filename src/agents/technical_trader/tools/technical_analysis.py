@@ -287,7 +287,8 @@ class DeterministicTechnicalAnalysisToolkit:
             ),
         ]
         observations.sort(
-            key=lambda observation: observation.points[-1].bar_index
+            key=lambda observation: observation.points[-1].bar_index,
+            reverse=True,
         )
         return observations[: self._chart_patterns.max_patterns_per_series]
 

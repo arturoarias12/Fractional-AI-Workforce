@@ -1,28 +1,27 @@
 """Technical Trader Agent."""
 
+from collections.abc import Sequence
+
+from protocols import SpecialistId
+
 from ..execution import ExecutionPolicy
 from ..model_client import MetricsSink, ModelClient
-from ..models.common import TraderType
-from ..models.hireability import (
-    HireableTechnicalTraderCard,
-    technical_trader_agent_card,
-)
 from ..prompts import (
     TECHNICAL_LENS_REQUIREMENTS,
     TECHNICAL_TRADER_SYSTEM_PROMPT,
 )
-from ..services import BacktestEngine, DataService
+from ..services import BacktestEngine, DataService, ValidationSplitPolicy
 from ..tools import (
     ArtifactPayloadTechnicalInputAdapter,
     DeterministicTechnicalAnalysisToolkit,
     TechnicalAnalysisInputAdapter,
     TechnicalAnalysisToolkit,
 )
-from .trader import TraderAgent
+from .trader import StagedTraderAgent
 
 
-class TechnicalTraderAgent(TraderAgent):
-    trader_type = TraderType.TECHNICAL
+class TechnicalTraderAgent(StagedTraderAgent):
+    trader_id = SpecialistId.TECHNICAL_TRADER
 
     def __init__(
         self,
@@ -30,6 +29,8 @@ class TechnicalTraderAgent(TraderAgent):
         model_client: ModelClient,
         data_service: DataService,
         backtest_engine: BacktestEngine,
+        available_executors: Sequence[str],
+        validation_split_policy: ValidationSplitPolicy | None = None,
         technical_input_adapter: TechnicalAnalysisInputAdapter | None = None,
         technical_toolkit: TechnicalAnalysisToolkit | None = None,
         metrics_sink: MetricsSink | None = None,
@@ -40,6 +41,8 @@ class TechnicalTraderAgent(TraderAgent):
             model_client=model_client,
             data_service=data_service,
             backtest_engine=backtest_engine,
+            available_executors=available_executors,
+            validation_split_policy=validation_split_policy,
             technical_input_adapter=(
                 technical_input_adapter
                 if technical_input_adapter is not None
@@ -66,9 +69,3 @@ class TechnicalTraderAgent(TraderAgent):
             "inverse_head_and_shoulders_detection",
             "deterministic_backtest_interpretation",
         )
-
-    @property
-    def agent_card(self) -> HireableTechnicalTraderCard:
-        """Return registry metadata without coupling to a registry implementation."""
-
-        return technical_trader_agent_card()

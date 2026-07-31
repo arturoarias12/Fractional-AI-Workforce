@@ -4,10 +4,32 @@ from __future__ import annotations
 
 import asyncio
 from abc import abstractmethod
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from pydantic import ValidationError
+
+from protocols import (
+    BacktestInterpretationDraft,
+    BacktestPlan,
+    BacktestRequest,
+    BacktestResult,
+    BacktestStatus,
+    CandidateProposalDraft,
+    CandidateRuleSpecification,
+    ConstraintCheckStatus,
+    DataCategory,
+    DataRequest,
+    DataResponse,
+    DataUsageSummary,
+    MandateConstraintAssessment,
+    RunStatus,
+    SpecialistId,
+    TraderFailure,
+    TraderResearchPlanDraft,
+    TraderStrategyPackage,
+    TraderTask,
+)
 
 from ..errors import (
     AgentInputValidationError,
@@ -16,44 +38,25 @@ from ..errors import (
 )
 from ..execution import ExecutionPolicy
 from ..model_client import MetricsSink, ModelClient, ModelRequestContext
-from ..models.backtest import (
-    BacktestRequest,
-    BacktestResult,
-    BacktestStatus,
-    CandidateProposalDraft,
-    CandidateRuleSpecification,
-)
-from ..models.common import (
-    TaskLineage,
-    TraderRunStatus,
-    TraderType,
-)
-from ..models.data import DataCategory, DataRequest, DataResponse
 from ..models.technical_analysis import TechnicalAnalysisReport
-from ..models.trader import (
-    BacktestInterpretationDraft,
-    ConstraintCheckStatus,
-    DataUsageSummary,
-    MandateConstraintAssessment,
-    TraderFailure,
-    TraderResearchPlanDraft,
-    TraderStrategyPackage,
-    TraderTask,
-)
 from ..prompts import (
     render_backtest_interpretation,
     render_candidate_proposal,
     render_research_plan,
 )
-from ..services import BacktestEngine, DataService
+from ..services import (
+    BacktestEngine,
+    DataService,
+    ValidationSplitPolicy,
+)
 from ..tools import TechnicalAnalysisInputAdapter, TechnicalAnalysisToolkit
 from .base import BaseAgent
 
 
-class TraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
+class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
     """Independent mandate → data → rule → backtest → interpretation pipeline."""
 
-    trader_type: TraderType
+    trader_id: SpecialistId
 
     def __init__(
         self,
@@ -62,6 +65,8 @@ class TraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         model_client: ModelClient,
         data_service: DataService,
         backtest_engine: BacktestEngine,
+        available_executors: Sequence[str],
+        validation_split_policy: ValidationSplitPolicy | None,
         technical_input_adapter: TechnicalAnalysisInputAdapter,
         technical_toolkit: TechnicalAnalysisToolkit,
         system_prompt: str,
@@ -80,6 +85,19 @@ class TraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         )
         self._data_service = data_service
         self._backtest_engine = backtest_engine
+        self._available_executors = tuple(
+            dict.fromkeys(
+                executor.strip()
+                for executor in available_executors
+                if executor and executor.strip()
+            )
+        )
+        if not self._available_executors:
+            raise ValueError(
+                "available_executors must name at least one deterministic "
+                "strategy executor registered with the Backtest Engine."
+            )
+        self._validation_split_policy = validation_split_policy
         self._technical_input_adapter = technical_input_adapter
         self._technical_toolkit = technical_toolkit
         self._system_prompt = system_prompt
@@ -90,15 +108,19 @@ class TraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
     def capabilities(self) -> tuple[str, ...]:
         """Human-readable capabilities for a future registry."""
 
+    @property
+    def available_executors(self) -> tuple[str, ...]:
+        return self._available_executors
+
     async def run(self, request: TraderTask) -> TraderStrategyPackage:
         if not isinstance(request, TraderTask):
             raise AgentInputValidationError(
                 f"{self.agent_id} requires a TraderTask input."
             )
-        if request.trader_type is not self.trader_type:
+        if request.trader_id is not self.trader_id:
             raise AgentInputValidationError(
-                f"{self.agent_id} handles {self.trader_type.value}, not "
-                f"{request.trader_type.value}."
+                f"{self.agent_id} handles {self.trader_id.value}, not "
+                f"{request.trader_id.value}."
             )
 
         data_request: DataRequest | None = None
@@ -196,12 +218,14 @@ class TraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                     data_response=data_response,
                     technical_analysis=technical_analysis,
                     lens_requirements=self._lens_requirements,
+                    available_executors=self._available_executors,
                 ),
                 response_model=CandidateProposalDraft,
                 context=self._model_context(request, "propose_candidate"),
             )
             candidate_rule, backtest_request = self._build_candidate_and_backtest(
                 request=request,
+                data_request=data_request,
                 data_response=data_response,
                 technical_analysis=technical_analysis,
                 proposal=proposal,
@@ -303,14 +327,14 @@ class TraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         return TraderStrategyPackage(
             package_id=f"{request.lineage.task_id}.package",
             candidate_id=candidate_rule.candidate_id,
-            trader_type=self.trader_type,
+            trader_id=self.trader_id,
             lineage=request.lineage,
             mandate_reference=request.mandate.reference(),
-            status=TraderRunStatus.COMPLETED,
+            status=RunStatus.COMPLETED,
             hypothesis=candidate_rule.hypothesis,
             data_request=data_request,
             data_usage=DataUsageSummary.from_response(data_response),
-            technical_analysis=technical_analysis,
+            specialty_evidence=self._specialty_evidence(technical_analysis),
             candidate_rule=candidate_rule,
             backtest_request=backtest_request,
             backtest_result=backtest_result,
@@ -329,6 +353,7 @@ class TraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             operation=operation,
             workflow_id=request.lineage.workflow_id,
             task_id=request.lineage.task_id,
+            attempt=request.lineage.attempt,
         )
 
     def _build_data_request(
@@ -336,11 +361,11 @@ class TraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         request: TraderTask,
         plan: TraderResearchPlanDraft,
     ) -> DataRequest:
-        lineage = self._child_lineage(request.lineage, "data")
+        lineage = request.lineage.child("data")
         return DataRequest(
             request_id=lineage.task_id,
             lineage=lineage,
-            trader_type=self.trader_type,
+            trader_id=self.trader_id,
             as_of_date=request.mandate.as_of_date,
             purpose=plan.purpose,
             asset_universe=request.mandate.permitted_asset_universe,
@@ -356,6 +381,7 @@ class TraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         self,
         *,
         request: TraderTask,
+        data_request: DataRequest,
         data_response: DataResponse,
         technical_analysis: TechnicalAnalysisReport,
         proposal: CandidateProposalDraft,
@@ -364,28 +390,58 @@ class TraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             proposal=proposal,
             technical_analysis=technical_analysis,
         )
-        candidate_lineage = self._child_lineage(request.lineage, "candidate")
+        self._validate_executor_selection(proposal)
+        candidate_lineage = request.lineage.child("candidate")
         candidate = CandidateRuleSpecification(
             **proposal.rule.model_dump(mode="python"),
             candidate_id=candidate_lineage.task_id,
-            trader_type=self.trader_type,
+            trader_id=self.trader_id,
             lineage=candidate_lineage,
         )
-        backtest_lineage = self._child_lineage(request.lineage, "backtest")
+        validation_split = None
+        if proposal.backtest_plan.held_out_evaluation_required:
+            if self._validation_split_policy is None:
+                raise ServiceContractError(
+                    "Held-out evaluation requires an injected shared "
+                    "ValidationSplitPolicy; the Technical Trader does not "
+                    "choose its own test window."
+                )
+            validation_split = self._validation_split_policy.resolve(
+                task=request,
+                plan=proposal.backtest_plan,
+                data_response=data_response,
+            )
+        plan = BacktestPlan.from_draft(
+            proposal.backtest_plan,
+            validation_split=validation_split,
+        )
+        backtest_lineage = request.lineage.child("backtest")
         backtest_request = BacktestRequest(
             request_id=backtest_lineage.task_id,
-            candidate_id=candidate.candidate_id,
-            trader_type=self.trader_type,
+            trader_id=self.trader_id,
             lineage=backtest_lineage,
             as_of_date=request.mandate.as_of_date,
-            rule=candidate,
-            plan=proposal.backtest_plan,
+            candidate=candidate,
+            plan=plan,
             data_references=[
                 artifact.data_reference for artifact in data_response.artifacts
             ],
             mandate_constraints=self._mandate_constraints(request),
         )
         return candidate, backtest_request
+
+    def _validate_executor_selection(
+        self,
+        proposal: CandidateProposalDraft,
+    ) -> None:
+        executor_id = proposal.rule.executor_id
+        if executor_id not in self._available_executors:
+            raise AgentOutputValidationError(
+                f"Candidate selected unregistered executor '{executor_id}'. "
+                "Available executors: "
+                + ", ".join(self._available_executors)
+                + "."
+            )
 
     @staticmethod
     def _validate_technical_research_plan(
@@ -427,17 +483,18 @@ class TraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         proposal: CandidateProposalDraft,
         technical_analysis: TechnicalAnalysisReport,
     ) -> None:
-        referenced = set(proposal.rule.technical_evidence_ids)
+        referenced = set(proposal.rule.specialty_evidence_ids)
         unknown = sorted(referenced - technical_analysis.evidence_ids())
         if unknown:
             raise AgentOutputValidationError(
                 "Candidate cited technical evidence absent from the deterministic "
                 "report: " + ", ".join(unknown)
             )
-        if not referenced.intersection(technical_analysis.level_ids()):
+        reliable_levels = technical_analysis.reliable_level_ids()
+        if not referenced.intersection(reliable_levels):
             raise AgentOutputValidationError(
-                "Candidate must use at least one computed support/resistance "
-                "level_id."
+                "Candidate must use at least one non-fallback support level at "
+                "or below the latest close, or resistance level at or above it."
             )
 
     @staticmethod
@@ -608,10 +665,10 @@ class TraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             candidate_id=(
                 candidate_rule.candidate_id if candidate_rule is not None else None
             ),
-            trader_type=self.trader_type,
+            trader_id=self.trader_id,
             lineage=request.lineage,
             mandate_reference=request.mandate.reference(),
-            status=TraderRunStatus.PARTIAL if partial else TraderRunStatus.FAILED,
+            status=RunStatus.PARTIAL if partial else RunStatus.FAILED,
             hypothesis=(
                 candidate_rule.hypothesis if candidate_rule is not None else None
             ),
@@ -621,7 +678,7 @@ class TraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                 if data_response is not None
                 else None
             ),
-            technical_analysis=technical_analysis,
+            specialty_evidence=self._specialty_evidence(technical_analysis),
             candidate_rule=candidate_rule,
             backtest_request=backtest_request,
             backtest_result=backtest_result,
@@ -641,10 +698,11 @@ class TraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         )
 
     @staticmethod
-    def _child_lineage(parent: TaskLineage, suffix: str) -> TaskLineage:
-        return TaskLineage(
-            workflow_id=parent.workflow_id,
-            task_id=f"{parent.task_id}.{suffix}",
-            parent_task_id=parent.task_id,
-            source_task_id=parent.source_task_id,
-        )
+    def _specialty_evidence(
+        technical_analysis: TechnicalAnalysisReport | None,
+    ) -> dict[str, Any]:
+        if technical_analysis is None:
+            return {}
+        return {
+            "technical_analysis": technical_analysis.model_dump(mode="json")
+        }

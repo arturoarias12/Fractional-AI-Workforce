@@ -3,25 +3,28 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
 from pydantic import ValidationError
+
+from protocols import (
+    ConstraintCheckStatus,
+    MandateConstraintAssessment,
+    PMMandate,
+    RunStatus,
+    SpecialistId,
+    TaskLineage,
+    TraderFailure,
+    TraderStrategyPackage,
+    TraderTask,
+)
 
 from .agents import TechnicalTraderAgent
 from .errors import MandateValidationError
 from .execution import ExecutionPolicy
 from .model_client import MetricsSink, ModelClient
-from .models.common import TaskLineage, TraderRunStatus, TraderType
-from .models.mandate import PMMandate
-from .models.trader import (
-    ConstraintCheckStatus,
-    MandateConstraintAssessment,
-    TraderFailure,
-    TraderStrategyPackage,
-    TraderTask,
-)
-from .services import BacktestEngine, DataService
+from .services import BacktestEngine, DataService, ValidationSplitPolicy
 from .tools import TechnicalAnalysisInputAdapter, TechnicalAnalysisToolkit
 
 
@@ -57,10 +60,10 @@ class TechnicalTraderRuntime:
         except TimeoutError:
             return TraderStrategyPackage(
                 package_id=f"{task.lineage.task_id}.package",
-                trader_type=TraderType.TECHNICAL,
+                trader_id=SpecialistId.TECHNICAL_TRADER,
                 lineage=task.lineage,
                 mandate_reference=validated.reference(),
-                status=TraderRunStatus.FAILED,
+                status=RunStatus.FAILED,
                 constraint_assessment=MandateConstraintAssessment(
                     status=ConstraintCheckStatus.NOT_EVALUATED,
                     requires_risk_validation=True,
@@ -107,7 +110,7 @@ class TechnicalTraderRuntime:
         return TraderTask(
             mandate=mandate,
             lineage=lineage,
-            trader_type=TraderType.TECHNICAL,
+            trader_id=SpecialistId.TECHNICAL_TRADER,
         )
 
 
@@ -116,6 +119,8 @@ def create_technical_trader_runtime(
     model_client: ModelClient,
     data_service: DataService,
     backtest_engine: BacktestEngine,
+    available_executors: Sequence[str],
+    validation_split_policy: ValidationSplitPolicy | None = None,
     technical_input_adapter: TechnicalAnalysisInputAdapter | None = None,
     technical_toolkit: TechnicalAnalysisToolkit | None = None,
     metrics_sink: MetricsSink | None = None,
@@ -127,6 +132,8 @@ def create_technical_trader_runtime(
             model_client=model_client,
             data_service=data_service,
             backtest_engine=backtest_engine,
+            available_executors=available_executors,
+            validation_split_policy=validation_split_policy,
             technical_input_adapter=technical_input_adapter,
             technical_toolkit=technical_toolkit,
             metrics_sink=metrics_sink,

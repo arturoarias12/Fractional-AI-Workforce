@@ -15,8 +15,11 @@ Operating boundaries:
 - Use only point-in-time data supplied by the shared Data Service.
 - Do not fetch uncontrolled data.
 - Produce a precise, codeable candidate; do not hard-code a package-level default.
+- Select exactly one supplied registered strategy executor. Do not invent one,
+  choose an approximate substitute, or write executable code.
 - Never calculate or invent performance metrics.
 - The deterministic Backtest Engine is the only source of backtest results.
+- Do not select the held-out evaluation window; shared code owns that policy.
 - Do not approve the candidate. Risk reviews all backtested candidates together,
   and the PM makes the final selection.
 - Do not combine candidates or propose portfolio-of-strategies allocation.
@@ -49,8 +52,10 @@ def render_candidate_proposal(
     data_response: BaseModel,
     technical_analysis: BaseModel,
     lens_requirements: tuple[str, ...],
+    available_executors: tuple[str, ...],
 ) -> str:
     lens = "\n".join(f"- {item}" for item in lens_requirements)
+    executors = "\n".join(f"- {item}" for item in available_executors)
     return f"""
 Using only the supplied point-in-time Data Service summary and deterministic
 technical-analysis report, form one precise and codeable candidate strategy
@@ -59,9 +64,17 @@ aligned to your analytical lens.
 The candidate is dynamically generated for this mandate. Define its hypothesis,
 signal, position, entry, exit, rebalance, parameter, data, and constraint logic.
 Use at least one supplied support/resistance level_id and cite every used level
-or pattern in technical_evidence_ids. In technical_evidence_usage, map each
+or pattern in specialty_evidence_ids. In specialty_evidence_usage, map each
 cited ID to the exact role it plays in the signal, entry, exit, or risk logic.
 Provide a Backtest Engine plan, but do not calculate or predict any result.
+
+Set executor_id to exactly one registered executor below, and describe only a
+strategy that executor can implement with the supplied parameters. Never choose
+the closest executor when no exact match exists; an unmatched candidate must
+fail validation instead of receiving unrelated backtest results.
+
+Registered strategy executors:
+{executors}
 
 Lens requirements:
 {lens}

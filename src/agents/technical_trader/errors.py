@@ -41,8 +41,3 @@ class ServiceContractError(TechnicalTraderError):
 
 class TechnicalAnalysisInputError(ServiceContractError):
     """Point-in-time data could not be adapted for the owned analysis tools."""
-
-
-# Temporary compatibility alias for callers of the pre-specialization package.
-# New integrations should depend on TechnicalTraderError.
-TraderAgentsError = TechnicalTraderError

@@ -20,12 +20,12 @@ import asyncio
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime
+from datetime import datetime
 from math import isfinite, sqrt
 from statistics import fmean, stdev
 from typing import Any, Protocol, runtime_checkable
 
-from protocols.research_contracts import (
+from protocols import (
     BacktestRequest,
     BacktestResult,
     BacktestStatus,
@@ -33,8 +33,7 @@ from protocols.research_contracts import (
 
 
 ENGINE_NAME = "fractional_ai_workforce_backtest_engine"
-ENGINE_VERSION = "0.2.0"
-EXECUTOR_ID_KEYS = ("executor_id", "strategy_executor_id")
+ENGINE_VERSION = "0.3.0"
 DEFAULT_AVAILABLE_FIELDS = (
     "symbol",
     "timestamp",
@@ -420,16 +419,20 @@ class DeterministicBacktestEngine:
                 simulation.transactions,
                 assumptions,
             )
-            out_of_sample_metrics = self._out_of_sample_metrics(
-                request=request,
-                simulation=simulation,
-                assumptions=assumptions,
+            out_of_sample_metrics, evaluation_warnings = (
+                self._out_of_sample_metrics(
+                    request=request,
+                    simulation=simulation,
+                    assumptions=assumptions,
+                )
             )
-            benchmark_metrics = self._benchmark_metrics(
+            warnings.extend(evaluation_warnings)
+            benchmark_metrics, benchmark_warnings = self._benchmark_metrics(
                 request=request,
                 bars=bars,
                 assumptions=assumptions,
             )
+            warnings.extend(benchmark_warnings)
             warnings.extend(
                 self._unsupported_metric_warnings(request, metrics)
             )
@@ -553,18 +556,7 @@ class DeterministicBacktestEngine:
 
     @staticmethod
     def _executor_id(request: BacktestRequest) -> str:
-        for source in (
-            request.additional_fields,
-            request.candidate.parameters,
-        ):
-            for key in EXECUTOR_ID_KEYS:
-                value = source.get(key)
-                if isinstance(value, str) and value.strip():
-                    return value.strip()
-        raise BacktestConfigurationError(
-            "A registered executor ID is required in request.additional_fields "
-            "or candidate.parameters under 'executor_id'."
-        )
+        return request.executor_id.strip()
 
     @staticmethod
     def _prepare_data(
@@ -699,7 +691,13 @@ class DeterministicBacktestEngine:
                 execution_index = index + assumptions.signal_delay_bars
                 if execution_index < len(timeline):
                     pending[execution_index].append((timestamp, normalized))
-                else:
+                elif self._target_requires_rebalance(
+                    target_weights=normalized,
+                    positions=positions,
+                    cash=cash,
+                    latest_bars=latest_bars,
+                    price_field="close",
+                ):
                     warnings.append(
                         "A final strategy signal could not execute because its "
                         "configured delay extended beyond available data."
@@ -741,6 +739,41 @@ class DeterministicBacktestEngine:
             transactions=tuple(transactions),
             warnings=tuple(warnings),
         )
+
+    @staticmethod
+    def _target_requires_rebalance(
+        *,
+        target_weights: Mapping[str, float],
+        positions: Mapping[str, float],
+        cash: float,
+        latest_bars: Mapping[str, PriceBar],
+        price_field: str,
+        tolerance: float = 1e-4,
+    ) -> bool:
+        equity = _portfolio_value(
+            cash,
+            positions,
+            latest_bars,
+            price_field,
+        )
+        if equity <= 0:
+            return True
+        symbols = set(target_weights) | set(positions)
+        for symbol in symbols:
+            bar = latest_bars.get(symbol)
+            if bar is None:
+                return True
+            current_weight = (
+                positions.get(symbol, 0.0)
+                * float(getattr(bar, price_field))
+                / equity
+            )
+            if (
+                abs(current_weight - target_weights.get(symbol, 0.0))
+                > tolerance
+            ):
+                return True
+        return False
 
     @staticmethod
     def _validate_target_weights(
@@ -806,9 +839,11 @@ class DeterministicBacktestEngine:
             weight = target_weights.get(symbol, 0.0)
             if bar is None:
                 if abs(weight) > 1e-12 or abs(current_quantity) > 1e-12:
-                    raise BacktestDataError(
-                        f"No execution bar for {symbol} at "
-                        f"{execution_timestamp.isoformat()}."
+                    warnings.append(
+                        f"Rebalance for {symbol} was skipped at "
+                        f"{execution_timestamp.isoformat()} because no "
+                        "execution bar was available; the existing position "
+                        "was preserved."
                     )
                 continue
             reference_price = float(getattr(bar, fill_field))
@@ -875,46 +910,40 @@ class DeterministicBacktestEngine:
         request: BacktestRequest,
         simulation: "_SimulationResult",
         assumptions: ExecutionAssumptions,
-    ) -> dict[str, float | int | None]:
-        raw_split = request.additional_fields.get("validation_split")
-        if raw_split is None:
+    ) -> tuple[
+        dict[str, float | int | None],
+        tuple[str, ...],
+    ]:
+        split = request.plan.validation_split
+        if split is None:
             if request.plan.held_out_evaluation_required:
                 raise BacktestConfigurationError(
-                    "held_out_evaluation_required is true, but "
-                    "request.additional_fields.validation_split is missing."
+                    "held_out_evaluation_required is true, but the finalized "
+                    "plan contains no validation_split."
                 )
-            return {}
-        if not isinstance(raw_split, Mapping):
-            raise BacktestConfigurationError(
-                "validation_split must be a mapping."
-            )
-        test_start = _coerce_date(
-            raw_split.get("test_start_date"),
-            "validation_split.test_start_date",
-        )
-        test_end = _coerce_date(
-            raw_split.get("test_end_date", request.as_of_date),
-            "validation_split.test_end_date",
-        )
-        if test_start > test_end:
-            raise BacktestConfigurationError(
-                "validation_split test_start_date must not exceed test_end_date."
-            )
+            return {}, ()
+        test_start = split.test_start_date
+        test_end = split.test_end_date
         points = tuple(
             point
             for point in simulation.equity_curve
             if test_start <= point.timestamp.date() <= test_end
         )
         if len(points) < 2:
-            raise BacktestDataError(
-                "Held-out period contains fewer than two equity observations."
+            return (
+                {},
+                (
+                    "The configured validation window contained fewer than "
+                    "two equity observations; in-sample metrics remain valid "
+                    "but out-of-sample metrics were not computed.",
+                ),
             )
         trades = tuple(
             trade
             for trade in simulation.transactions
             if test_start <= trade.execution_timestamp.date() <= test_end
         )
-        return _compute_metrics(points, trades, assumptions)
+        return _compute_metrics(points, trades, assumptions), ()
 
     @staticmethod
     def _benchmark_metrics(
@@ -922,10 +951,13 @@ class DeterministicBacktestEngine:
         request: BacktestRequest,
         bars: tuple[PriceBar, ...],
         assumptions: ExecutionAssumptions,
-    ) -> dict[str, float | int | None]:
+    ) -> tuple[
+        dict[str, float | int | None],
+        tuple[str, ...],
+    ]:
         benchmark = request.plan.benchmark
         if not benchmark:
-            return {}
+            return {}, ()
         benchmark_bars = tuple(
             sorted(
                 (bar for bar in bars if bar.symbol == benchmark),
@@ -933,7 +965,13 @@ class DeterministicBacktestEngine:
             )
         )
         if len(benchmark_bars) < 2:
-            return {}
+            return (
+                {},
+                (
+                    f"Benchmark '{benchmark}' could not be computed because "
+                    "fewer than two benchmark bars were resolved.",
+                ),
+            )
         first_close = benchmark_bars[0].close
         points = tuple(
             EquityPoint(
@@ -942,7 +980,7 @@ class DeterministicBacktestEngine:
             )
             for bar in benchmark_bars
         )
-        return _compute_metrics(points, (), assumptions)
+        return _compute_metrics(points, (), assumptions), ()
 
     @staticmethod
     def _unsupported_metric_warnings(
@@ -1100,21 +1138,6 @@ def _boolean(value: Any, name: str) -> bool:
     if not isinstance(value, bool):
         raise BacktestConfigurationError(f"{name} must be a boolean.")
     return value
-
-
-def _coerce_date(value: Any, name: str) -> date:
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value)
-        except ValueError as exc:
-            raise BacktestConfigurationError(
-                f"{name} must be an ISO date."
-            ) from exc
-    raise BacktestConfigurationError(f"{name} must be a date or ISO date.")
 
 
 def _deduplicate(values: Sequence[str]) -> list[str]:

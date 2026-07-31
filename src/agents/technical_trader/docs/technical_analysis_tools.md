@@ -85,16 +85,18 @@ The tool report supplies:
 - `level_id` for every support/resistance level
 - `pattern_id` for every observed chart structure
 
-The LLM must return its cited IDs in `technical_evidence_ids` and map every ID
-to its exact rule role in `technical_evidence_usage`. Code rejects:
+The LLM must return its cited IDs in `specialty_evidence_ids` and map every ID
+to its exact rule role in `specialty_evidence_usage`. Code rejects:
 
 - IDs absent from the report; and
-- candidates that cite no support/resistance level; and
+- candidates that cite no non-fallback support/resistance level on the correct
+  side of the latest close; and
 - missing or extra evidence-usage mappings.
 
 ## Limitations
 
 - Pivot and pattern definitions are configurable heuristics.
+- When pattern output is capped, the most recent observations are retained.
 - Different frequencies can produce different structures.
 - Range fallbacks are not equivalent to repeatedly tested levels.
 - Adjustment methodology affects historical prices.
