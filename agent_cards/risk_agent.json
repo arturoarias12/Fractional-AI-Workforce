@@ -6,7 +6,7 @@
   "version": "0.1.0",
   "role_type": "specialist",
   "hireable": true,
-  "implementation_status": "placeholder",
+  "implementation_status": "prototype",
   "input_contract": "RiskReviewRequest",
   "output_contract": "RiskReviewResponse",
   "capabilities": [
@@ -14,6 +14,7 @@
     "overfitting_review",
     "look_ahead_bias_review",
     "selection_bias_review",
+    "cherry_picking_checklist_cp1_cp13",
     "candidate_veto"
   ],
   "required_dependencies": [
