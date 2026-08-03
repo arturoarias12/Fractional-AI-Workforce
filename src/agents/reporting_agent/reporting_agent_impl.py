@@ -11,13 +11,57 @@ TODO:
 from .reporting_agent import ReportingAgent
 from protocols.reporting import ReportingOutput, ReportingRequest
 
+from pydantic import BaseModel
+
+from agents.technical_trader.model_client import (
+    ModelClient,
+    ModelRequestContext,
+)
+
 REPORT_AGENT_ID = "report_agent"
 REPORT_AGENT_CARD_VERSION = "0.1.0"
+
+MEMO_PROMPT_BUILDING_LINES = """
+Prepare a PM-facing strategy memo for the surviving candidates.
+
+Candidate comparison:
+"""
+
+MEMO_PROMPT_BUILDING_EXTEND = """
+Compare the surviving candidates across their different research lenses. 
+Explain the important differences in performance, interpretation, strengths, weaknesses, and risk findings. 
+Include all required Risk disclosures. 
+Do not select a winner or make the final portfolio decision.
+"""
+
+REPORTING_SYSTEM_PROMPT = """
+You are the Reporting Agent on an investment-research desk.
+
+Prepare a concise strategy memo for the Portfolio Manager based only on
+the provided candidate and Risk review information.
+
+Rules:
+1. Summarize and compare the surviving strategy candidates.
+2. Clearly report material Risk flags and critiques.
+3. Do not invent evidence, metrics, or conclusions.
+4. Do not select a winner or make the final portfolio decision.
+"""
+
+
+class StrategyMemo(BaseModel):
+    summary: str
 
 
 class ReportingAgentImpl(ReportingAgent):
 
     agent_id = "reporting_agent"
+
+    def __init__(
+        self,
+        *,
+        model_client: ModelClient | None = None,
+    ) -> None:
+        self._model_client = model_client
 
     async def report(self, request: ReportingRequest) -> ReportingOutput:
 
@@ -115,13 +159,80 @@ class ReportingAgentImpl(ReportingAgent):
         # TODO: Build a PM-facing prompt for model_client
         # from the comparison and required risk disclosures
 
-        raise NotImplementedError
+        lines = MEMO_PROMPT_BUILDING_LINES
+
+        for candidate in comparison.get("candidates", []):
+            lines.extend(
+                [
+                    "",
+                    f"Candidate {candidate.get('candidate_id')}:"
+                    f"  Trader_ID: {candidate.get('trader_id')}"
+                    f"  Hypothesis: {candidate.get('hypothesis')}"
+                    f"  Metrics: {candidate.get('metrics',{})}",
+                    (
+                        "   Out-of-sample metrics: "
+                        f"{candidate.get('out_of_sample_metrics',{})}"
+                    ),
+                    f"  Interpretation: {candidate.get('interpretation')}",
+                    f"  Strengths: {candidate.get('strengths', [])}",
+                    f"  Weaknesses: {candidate.get('weaknesses', [])}",
+                    f"  Risk verdict: {candidate.get('risk_verdict')}",
+                    f"  Risk critiques: {candidate.get('risk_critiques', [])}",
+                    f"  Reporting flags: {candidate.get('reporting_flags', [])}",
+                ]
+            )
+
+        lines.extend(
+            [
+                "",
+                "Round-level risk information:",
+                (
+                    "Collective critiques: "
+                    f"{comparison.get('collective_critiques', [])}"
+                ),
+                (
+                    "Required reporting flags: "
+                    f"{comparison.get('reporting_required_flags', [])}"
+                ),
+                "",
+                MEMO_PROMPT_BUILDING_EXTEND,
+            ]
+        )
+
+        return "\n".join(lines)
 
     async def _generate_memo(self, candidates, comparison, risk_response):
         # TODO: Generate a PM-facing strategy memo
 
         prompt = self._build_memo_prompt(candidates, comparison, risk_response)
 
-        # TODO: Call model_client with prompt
+        if self._model_client is None:
+            return None
 
-        raise NotImplementedError
+        if not candidates:
+            return None
+
+        context = ModelRequestContext(
+            agent_id=self.agent_id,
+            operation="strategy_memo_generation",
+            workflow_id=candidates[0].lineage.workflow.id,
+            task_id=risk_response.request_id,
+        )
+
+        system_prompt = REPORTING_SYSTEM_PROMPT
+
+        user_prompt = self._build_memo_prompt(candidates, comparison, risk_response)
+
+        result = await self._model_client.generate_structured(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            response_model=StrategyMemo,
+            context=context,
+        )
+
+        output = result.output
+
+        if isinstance(output, StrategyMemo):
+            return output.summary
+
+        return StrategyMemo.model_validate(output).summary
