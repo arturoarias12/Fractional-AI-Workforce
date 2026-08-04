@@ -1,0 +1,405 @@
+"""Clickable Streamlit mockup for the Fractional AI Workforce project.
+
+This version deliberately uses simulated data.  It is designed for a clickable
+review, not for production trading or live agent execution.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+import streamlit as st
+
+
+st.set_page_config(
+    page_title="Fractional AI Workforce",
+    page_icon="◈",
+    layout="wide",
+)
+
+st.markdown(
+    """
+    <style>
+      .block-container {max-width: 1400px; padding-top: 1.5rem;}
+      .status {border-radius: 999px; padding: .22rem .62rem; font-size: .82rem;
+               font-weight: 650; display: inline-block;}
+      .idle, .assigned {background:#e5e7eb; color:#374151;}
+      .running {background:#dbeafe; color:#1d4ed8;}
+      .waiting {background:#fef3c7; color:#92400e;}
+      .completed {background:#dcfce7; color:#166534;}
+      .failed, .vetoed {background:#fee2e2; color:#b91c1c;}
+      .workflow-box {border: 1px solid #dbe3ef; border-radius: 12px; padding: .7rem;
+                     text-align: center; min-height: 76px; background:#fff;}
+      .small-label {font-size:.76rem; color:#64748b; text-transform:uppercase;
+                    letter-spacing:.04em;}
+      .agent-name {font-size:1.1rem; font-weight:700;}
+      .demo-note {background:#eff6ff; color:#1e3a8a; border:1px solid #bfdbfe;
+                  border-radius:10px; padding:.7rem 1rem; margin-bottom:1rem;}
+      .parallel-label {font-size:.78rem; color:#64748b; text-align:center;
+                       margin-bottom:.35rem; font-weight:650;}
+      .workflow-middle-spacer {height:112px;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+PM_MANDATE = {
+    "objective": "Find a moderate-risk ETF strategy with broad diversification.",
+    "risk": "Moderate",
+    "constraint": "Avoid high concentration and use the 120-ETF universe.",
+}
+
+
+def make_agents(phase: str, staffing: dict[str, str] | None = None) -> dict[str, dict]:
+    """Return predictable simulated data for the professor demo."""
+    trader_states = {
+        "idle": ("Idle", "Waiting for a research task"),
+        "running": ("Running", "Analyze market evidence and draft a rule"),
+        "completed": ("Completed", "Strategy package submitted to Risk Review"),
+    }
+    state, task = trader_states[phase]
+    risk_state, risk_task = {
+        "idle": ("Idle", "Waiting for trader results"),
+        "running": ("Waiting for Review", "Waiting for all three trader packages"),
+        "completed": ("Completed", "Review trader strategies for overfitting"),
+    }[phase]
+    report_state, report_task = {
+        "idle": ("Idle", "Waiting for Risk approval"),
+        "running": ("Assigned", "Waiting for approved research packages"),
+        "completed": ("Completed", "Create PM-facing research memo"),
+    }[phase]
+
+    agents = {
+        "technical": {
+            "name": "Technical Trader", "role": "Price action, volume and indicators",
+            "state": state, "task": task,
+            "input": "PM mandate + point-in-time price and volume data",
+            "output": "Momentum rule; backtest summary: 7.4% simulated return",
+            "start": "10:02", "end": "10:05" if phase == "completed" else "—",
+            "next": "Risk Review" if phase == "completed" else "Backtest Engine",
+            "error": "None", "completion_time": "3m 06s", "success_rate": "92%",
+            "api_cost": "$0.24", "retry_count": 0, "failed_count": 0,
+            "risk_feedback": "Approved — result is stable on held-out data.",
+        },
+        "fundamental": {
+            "name": "Fundamental Trader", "role": "ETF fund characteristics and exposure",
+            "state": state, "task": task,
+            "input": "PM mandate + ETF metadata and fund characteristics",
+            "output": "Low-cost quality ETF screen; backtest summary: 6.8% simulated return",
+            "start": "10:02", "end": "10:06" if phase == "completed" else "—",
+            "next": "Risk Review" if phase == "completed" else "Data Service",
+            "error": "None", "completion_time": "3m 44s", "success_rate": "86%",
+            "api_cost": "$0.27", "retry_count": 1, "failed_count": 1,
+            "risk_feedback": "Approved — assumptions are documented.",
+        },
+        "quant": {
+            "name": "Quant Trader", "role": "Statistical anomalies and correlations",
+            "state": state, "task": task,
+            "input": "PM mandate + historical prices + correlation output",
+            "output": "Pair-trading rule; backtest summary: 8.1% simulated return",
+            "start": "10:02", "end": "10:07" if phase == "completed" else "—",
+            "next": "Risk Review" if phase == "completed" else "Backtest Engine",
+            "error": "None", "completion_time": "5m 11s", "success_rate": "68%",
+            "api_cost": "$0.31", "retry_count": 3, "failed_count": 2,
+            "risk_feedback": "Vetoed — possible overfitting; validate out-of-sample.",
+        },
+        "risk": {
+            "name": "Risk / Skeptic", "role": "Overfitting and cherry-picking review",
+            "state": risk_state, "task": risk_task,
+            "input": "All settled trader packages, including failures",
+            "output": "Approved: Technical, Fundamental. Vetoed: Quant.",
+            "start": "10:07" if phase == "completed" else "—", "end": "10:09" if phase == "completed" else "—",
+            "next": "Reporting" if phase == "completed" else "Wait for all trader branches",
+            "error": "None", "completion_time": "2m 03s", "success_rate": "96%",
+            "api_cost": "$0.19", "retry_count": 0, "failed_count": 0,
+            "risk_feedback": "Signature review stage: detects selection bias across traders.",
+        },
+        "reporting": {
+            "name": "Reporting", "role": "PM-facing research memo",
+            "state": report_state, "task": report_task,
+            "input": "Only Risk-approved strategies and critiques",
+            "output": "Research memo comparing the approved Technical and Fundamental results.",
+            "start": "10:09" if phase == "completed" else "—", "end": "10:10" if phase == "completed" else "—",
+            "next": "Human PM Decision" if phase == "completed" else "Risk approval",
+            "error": "None", "completion_time": "1m 18s", "success_rate": "98%",
+            "api_cost": "$0.12", "retry_count": 0, "failed_count": 0,
+            "risk_feedback": "Receives approved packages only; it never combines strategies.",
+        },
+    }
+    # A staffing choice affects the next simulated research round, not the
+    # completed one in which the decision was made.
+    if phase == "running" and staffing:
+        for agent_id in ("technical", "fundamental", "quant"):
+            if staffing.get(agent_id) == "Benched":
+                agents[agent_id].update({
+                    "state": "Idle",
+                    "task": "Benched for this research round",
+                    "input": "No work assigned in this round",
+                    "output": "No strategy package submitted",
+                    "start": "—",
+                    "end": "—",
+                    "next": "Hire or pivot before a future round",
+                })
+    return agents
+
+
+def init_state() -> None:
+    defaults = {
+        "view": "dashboard", "selected_agent": "technical", "phase": "idle",
+        "round_number": 4, "pm_decision": None,
+        "staffing": {key: "Active" for key in ["technical", "fundamental", "quant", "risk", "reporting"]},
+        "memory": [
+            "Round 03 — Quant strategy required stronger out-of-sample validation.",
+            "Round 03 — Technical Trader had the highest completed-task success rate (92%).",
+        ],
+        "notice": "",
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
+def status_class(state: str) -> str:
+    return {
+        "Idle": "idle", "Assigned": "assigned", "Running": "running",
+        "Waiting for Tool": "waiting", "Waiting for Review": "waiting",
+        "Completed": "completed", "Failed": "failed",
+    }.get(state, "idle")
+
+
+def status_badge(state: str) -> str:
+    return f'<span class="status {status_class(state)}">{state}</span>'
+
+
+@st.dialog("Confirm staffing action")
+def staffing_dialog(agent_id: str, action: str) -> None:
+    agents = make_agents(st.session_state.phase, st.session_state.staffing)
+    agent = agents[agent_id]
+    st.write(f"**Agent:** {agent['name']}")
+    st.write(f"**Action:** {action}")
+    default_reason = {
+        "Hire": "Bring this agent back into the next research round.",
+        "Bench": "Lower success rate and repeated retries in the prior round.",
+        "Pivot": "Validate signals on out-of-sample data and reduce overfitting risk.",
+    }[action]
+    reason = st.text_area("Reason for the next research round", value=default_reason)
+    left, right = st.columns(2)
+    if left.button("Cancel", use_container_width=True):
+        st.rerun()
+    if right.button("Confirm", type="primary", use_container_width=True):
+        new_status = {"Hire": "Active", "Bench": "Benched", "Pivot": "Active"}[action]
+        st.session_state.staffing[agent_id] = new_status
+        timestamp = datetime.now().strftime("%H:%M")
+        if action == "Pivot":
+            entry = f"{timestamp} — PM pivoted {agent['name']} for Round {st.session_state.round_number + 1}: {reason}"
+        else:
+            entry = f"{timestamp} — PM chose to {action.lower()} {agent['name']} for Round {st.session_state.round_number + 1}. Reason: {reason}"
+        st.session_state.memory.insert(0, entry)
+        st.session_state.notice = f"{agent['name']} is marked {new_status} for the next research round. Decision saved to Memory."
+        st.rerun()
+
+
+def show_header() -> None:
+    title, action = st.columns([5, 1])
+    title.title("Fractional AI Workforce")
+    action.markdown("<div style='padding-top:1.1rem'>🟦 Demo mode</div>", unsafe_allow_html=True)
+    st.markdown("<div class='demo-note'>Demo mode · Workflow activity, metrics, and decisions use simulated data.</div>", unsafe_allow_html=True)
+    if st.session_state.notice:
+        st.success(st.session_state.notice)
+        st.session_state.notice = ""
+
+
+def workflow_box(label: str, detail: str, state: str) -> None:
+    st.markdown(
+        f"<div class='workflow-box'><strong>{label}</strong><br>{status_badge(state)}<br><span style='font-size:.8rem;color:#64748b'>{detail}</span></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def dashboard() -> None:
+    show_header()
+    agents = make_agents(st.session_state.phase, st.session_state.staffing)
+    current_round = st.session_state.round_number
+    st.subheader(f"Round {current_round:02d} · ETF Research")
+    mandate, controls = st.columns([4, 1])
+    with mandate:
+        st.markdown("#### Human PM Mandate")
+        st.write(f"**Objective:** {PM_MANDATE['objective']}")
+        st.caption(f"Risk profile: {PM_MANDATE['risk']} · Constraint: {PM_MANDATE['constraint']}")
+    with controls:
+        st.write("")
+        can_start = st.session_state.phase in {"idle", "completed"}
+        if st.button("Start Research", type="primary", use_container_width=True, disabled=not can_start):
+            st.session_state.phase = "running"
+            st.session_state.pm_decision = None
+            active_agents = [name for name, status in st.session_state.staffing.items() if status == "Active"]
+            st.session_state.notice = f"Round {current_round:02d} is running. Active workforce: {len(active_agents)} agents."
+            st.rerun()
+        if st.button("Advance Demo to Completed Review", use_container_width=True, disabled=st.session_state.phase == "idle"):
+            st.session_state.phase = "completed"
+            st.session_state.notice = "Simulated research round completed; Risk review and report are ready."
+            st.rerun()
+
+    st.divider()
+    st.markdown("#### Research Workflow")
+    pm_col, trader_col, risk_col, report_col = st.columns([1.15, 1.45, 1.2, 1.2])
+    with pm_col:
+        st.markdown("<div class='workflow-middle-spacer'></div>", unsafe_allow_html=True)
+        workflow_box("PM Intake", "Human mandate", "Completed" if st.session_state.phase != "idle" else "Idle")
+    with trader_col:
+        st.markdown("<div class='parallel-label'>PARALLEL RESEARCH BRANCHES</div>", unsafe_allow_html=True)
+        workflow_box("Technical Trader", "Independent branch", agents["technical"]["state"])
+        workflow_box("Fundamental Trader", "Independent branch", agents["fundamental"]["state"])
+        workflow_box("Quant Trader", "Independent branch", agents["quant"]["state"])
+    with risk_col:
+        st.markdown("<div class='workflow-middle-spacer'></div>", unsafe_allow_html=True)
+        workflow_box("Risk Review", "Fan-in after active traders", agents["risk"]["state"])
+    with report_col:
+        st.markdown("<div class='workflow-middle-spacer'></div>", unsafe_allow_html=True)
+        workflow_box("Reporting", "PM-facing memo", agents["reporting"]["state"])
+    st.caption("Technical, Fundamental, and Quant research run concurrently from the same PM mandate. Risk Review begins only after every active branch settles.")
+
+    st.markdown("#### Current Round Summary")
+    metric_cols = st.columns(4)
+    metric_cols[0].metric("Research Completion Time", "6m 42s" if st.session_state.phase == "completed" else "In progress")
+    metric_cols[1].metric("Total API Cost", "$1.13" if st.session_state.phase == "completed" else "$0.48")
+    active = sum(status == "Active" for status in st.session_state.staffing.values())
+    metric_cols[2].metric("Active Agents", f"{active} / 5")
+    metric_cols[3].metric("Round Status", st.session_state.phase.title())
+
+    st.divider()
+    st.markdown("#### Agent Workforce")
+    for row in [["technical", "fundamental", "quant"], ["risk", "reporting"]]:
+        columns = st.columns(3)
+        for col, agent_id in zip(columns, row):
+            agent = agents[agent_id]
+            with col:
+                staffing_status = st.session_state.staffing[agent_id]
+                st.markdown(f"<div class='agent-name'>{agent['name']}</div>{status_badge(agent['state'])} &nbsp; <span style='font-size:.85rem'>Next round: {staffing_status}</span>", unsafe_allow_html=True)
+                st.caption(agent["role"])
+                st.write(f"**Current task:** {agent['task']}")
+                a, b = st.columns(2)
+                a.caption(f"Success rate\n\n**{agent['success_rate']}**")
+                b.caption(f"Completion time\n\n**{agent['completion_time']}**")
+                c, d = st.columns(2)
+                c.caption(f"API cost\n\n**{agent['api_cost']}**")
+                d.caption(f"Retries / Failed\n\n**{agent['retry_count']} / {agent['failed_count']}**")
+                if st.button("View Agent Detail", key=f"view-{agent_id}", use_container_width=True):
+                    st.session_state.selected_agent = agent_id
+                    st.session_state.view = "detail"
+                    st.rerun()
+
+    st.divider()
+    left, right = st.columns([2, 1])
+    with left:
+        st.markdown("#### Recent Memory / Previous Lessons")
+        for entry in st.session_state.memory[:3]:
+            st.write(f"• {entry}")
+    with right:
+        st.markdown("#### PM Decision")
+        if st.button("View Research Report", type="primary", use_container_width=True, disabled=st.session_state.phase != "completed"):
+            st.session_state.view = "report"
+            st.rerun()
+
+
+def agent_detail() -> None:
+    show_header()
+    agents = make_agents(st.session_state.phase, st.session_state.staffing)
+    agent_id = st.session_state.selected_agent
+    agent = agents[agent_id]
+    if st.button("← Back to Dashboard"):
+        st.session_state.view = "dashboard"
+        st.rerun()
+    st.title(agent["name"])
+    st.caption(f"{agent['role']} · Next-round staffing: {st.session_state.staffing[agent_id]}")
+    st.markdown(status_badge(agent["state"]), unsafe_allow_html=True)
+
+    main, metrics = st.columns([3, 2])
+    with main:
+        st.subheader("Agent Status Schema")
+        st.markdown(f"**Current State**  ")
+        st.markdown(status_badge(agent["state"]), unsafe_allow_html=True)
+        st.markdown(f"**Current Task**  \n{agent['task']}")
+        st.markdown(f"**Input**  \n{agent['input']}")
+        st.markdown(f"**Output**  \n{agent['output']}")
+        times = st.columns(2)
+        times[0].markdown(f"**Start Time**  \n{agent['start']}")
+        times[1].markdown(f"**End Time**  \n{agent['end']}")
+        st.markdown(f"**Next Step**  \n{agent['next']}")
+        st.markdown(f"**Error Message**  \n{agent['error']}")
+    with metrics:
+        st.subheader("Productivity Metrics")
+        st.metric("Task Completion Time", agent["completion_time"])
+        st.metric("Success Rate", agent["success_rate"])
+        st.metric("API Cost", agent["api_cost"])
+        st.metric("Retry Count", agent["retry_count"])
+        st.metric("Failed Count", agent["failed_count"])
+        st.caption("These metrics support PM staffing decisions; they are simulated for this prototype.")
+
+    st.divider()
+    st.subheader("Risk Feedback")
+    st.info(agent["risk_feedback"])
+    st.subheader("Staffing Actions")
+    if st.session_state.phase != "completed":
+        st.caption("Staffing changes are available after the current round is completed and apply to the next round.")
+        return
+
+    st.caption("These actions are recorded for the next research round. They do not alter a completed round.")
+    staffing_status = st.session_state.staffing[agent_id]
+    actions = ["Hire"] if staffing_status == "Benched" else ["Bench", "Pivot"]
+    buttons = st.columns(len(actions))
+    for col, action in zip(buttons, actions):
+        if col.button(action, key=f"{action}-{agent_id}", type="primary" if action == "Hire" else "secondary", use_container_width=True):
+            staffing_dialog(agent_id, action)
+
+
+def report_page() -> None:
+    show_header()
+    if st.button("← Back to Dashboard"):
+        st.session_state.view = "dashboard"
+        st.rerun()
+    current_round = st.session_state.round_number
+    st.title(f"Research Report · Round {current_round:02d}")
+    st.caption("Generated by Reporting Agent from Risk-approved simulated results.")
+    st.subheader("Risk Review Summary")
+    st.success("Technical Trader — Approved: stable on held-out simulated data.")
+    st.success("Fundamental Trader — Approved: assumptions are documented.")
+    st.error("Quant Trader — Risk outcome: Vetoed for possible overfitting; requires out-of-sample validation.")
+    st.subheader("Reporting Agent Memo")
+    st.markdown(
+        "**Recommendation:** Consider the diversified ETF momentum screen, supported by technical and fund-level evidence.\n\n"
+        "**Limitation:** Backtest results are simulated in this clickable prototype and do not guarantee future performance."
+    )
+    st.subheader("Human PM Decision")
+    if st.session_state.pm_decision:
+        st.success(f"Decision recorded: {st.session_state.pm_decision}")
+        st.caption("The decision and its rationale are retained in Memory for future rounds.")
+        return
+    one, two, three = st.columns(3)
+    if one.button("Select Strategy", type="primary", use_container_width=True):
+        st.session_state.pm_decision = "Selected diversified ETF momentum strategy"
+        st.session_state.memory.insert(0, f"PM selected the diversified ETF momentum strategy in Round {current_round:02d}.")
+        st.rerun()
+    if two.button("Reject", use_container_width=True):
+        st.session_state.pm_decision = "Rejected all strategies"
+        st.session_state.memory.insert(0, f"PM rejected all strategies in Round {current_round:02d}; outcome saved to Memory.")
+        st.rerun()
+    if three.button("Request Another Round", use_container_width=True):
+        st.session_state.memory.insert(0, f"PM requested Round {current_round + 1:02d}; prior lessons will guide the new research round.")
+        st.session_state.pm_decision = "Requested another research round"
+        st.session_state.round_number += 1
+        st.session_state.phase = "running"
+        st.session_state.notice = f"Round {st.session_state.round_number:02d} started with lessons from Round {current_round:02d}."
+        st.session_state.view = "dashboard"
+        st.rerun()
+
+
+init_state()
+
+if st.session_state.view == "dashboard":
+    dashboard()
+elif st.session_state.view == "detail":
+    agent_detail()
+else:
+    report_page()
