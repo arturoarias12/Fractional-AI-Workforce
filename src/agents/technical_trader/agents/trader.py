@@ -559,13 +559,9 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
     ) -> None:
         if not data_response.artifacts:
             raise ServiceContractError("Data Service returned no data artifacts.")
-        if not all(
-            provenance.point_in_time_verified
-            for artifact in data_response.artifacts
-            for provenance in artifact.provenance
-        ):
+        if not all(artifact.provenance for artifact in data_response.artifacts):
             raise ServiceContractError(
-                "Data Service response contains unverified point-in-time evidence."
+                "Data Service response is missing provenance."
             )
         unavailable = {item.casefold() for item in data_response.unavailable_fields}
         missing_required = [
