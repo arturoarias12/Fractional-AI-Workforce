@@ -146,7 +146,6 @@ class StaticExcelDataResolver:
         return ResolvedBacktestData(
             data_references=tuple(request.data_references),
             bars=tuple(bars),
-            point_in_time_verified=True,
         )
 
 

@@ -55,6 +55,23 @@ class ArtifactPayloadTechnicalInputAdapter:
                     )
                     continue
 
+                if self._is_symbol_panel(candidate):
+                    for symbol, bars in candidate.items():
+                        normalized = {
+                            "artifact_id": artifact.artifact_id,
+                            "symbol": str(symbol),
+                            "as_of_date": response.as_of_date,
+                            "frequency": artifact.frequency or "daily",
+                            "bars": [self._bar_mapping(bar) for bar in bars],
+                        }
+                        try:
+                            series.append(PriceSeries.model_validate(normalized))
+                        except ValidationError as exc:
+                            errors.append(
+                                f"{artifact.artifact_id}[{symbol}]: {exc}"
+                            )
+                    continue
+
                 normalized: dict[str, Any] = dict(candidate)
                 normalized.setdefault("artifact_id", artifact.artifact_id)
                 normalized.setdefault("as_of_date", response.as_of_date)
@@ -94,3 +111,33 @@ class ArtifactPayloadTechnicalInputAdapter:
         ):
             return list(payload)
         return [payload]
+
+    @staticmethod
+    def _is_symbol_panel(payload: Mapping[str, Any]) -> bool:
+        """Detect shared-service ``{symbol: bars}`` payloads."""
+        if not payload or "bars" in payload or "series" in payload:
+            return False
+        reserved = {"artifact_id", "symbol", "as_of_date", "frequency", "adjustment"}
+        if reserved.intersection(payload):
+            return False
+        return all(
+            isinstance(bars, Sequence) and not isinstance(bars, (str, bytes))
+            for bars in payload.values()
+        )
+
+    @staticmethod
+    def _bar_mapping(bar: Any) -> dict[str, Any]:
+        if isinstance(bar, Mapping):
+            return {
+                key: bar[key]
+                for key in ("timestamp", "open", "high", "low", "close", "volume")
+                if key in bar
+            }
+        return {
+            "timestamp": bar.timestamp,
+            "open": float(bar.open),
+            "high": float(bar.high),
+            "low": float(bar.low),
+            "close": float(bar.close),
+            "volume": None if getattr(bar, "volume", None) is None else float(bar.volume),
+        }
