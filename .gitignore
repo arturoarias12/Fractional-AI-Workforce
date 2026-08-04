@@ -13,3 +13,4 @@ build/
 # Local market-data workbooks: supplied per developer, not versioned here.
 # The Quant Trader demo expects ETF_historical_prices.xlsx in the repo root.
 *.xlsx
+.vendor/
