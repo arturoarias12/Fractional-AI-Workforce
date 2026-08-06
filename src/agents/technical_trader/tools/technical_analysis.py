@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from math import sqrt
 from typing import Protocol, Sequence, runtime_checkable
 
 from ..models.technical_analysis import (
@@ -12,6 +13,10 @@ from ..models.technical_analysis import (
     ChartPatternObservation,
     ChartPatternStatus,
     ChartPatternType,
+    MovingAverageConfig,
+    MovingAverageCrossDirection,
+    MovingAverageObservation,
+    MovingAverageRelationship,
     PatternPoint,
     PivotKind,
     PriceBar,
@@ -20,6 +25,8 @@ from ..models.technical_analysis import (
     SupportResistanceConfig,
     SupportResistanceLevel,
     TechnicalAnalysisReport,
+    VolumeAnalysisConfig,
+    VolumeObservation,
 )
 
 
@@ -35,6 +42,7 @@ class TechnicalAnalysisToolkit(Protocol):
         report_id: str,
     ) -> TechnicalAnalysisReport:
         """Compute Technical Trader evidence without using an LLM."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,18 +61,51 @@ class DeterministicTechnicalAnalysisToolkit:
     review.
     """
 
-    version = "0.1.0"
+    version = "0.4.0"
 
     def __init__(
         self,
         *,
         support_resistance: SupportResistanceConfig | None = None,
         chart_patterns: ChartPatternConfig | None = None,
+        moving_average: MovingAverageConfig | None = None,
+        moving_averages: Sequence[MovingAverageConfig] | None = None,
+        volume_analysis: VolumeAnalysisConfig | None = None,
     ) -> None:
+        if moving_average is not None and moving_averages is not None:
+            raise ValueError(
+                "Provide moving_average or moving_averages, not both."
+            )
         self._support_resistance = (
             support_resistance or SupportResistanceConfig()
         )
         self._chart_patterns = chart_patterns or ChartPatternConfig()
+        configured_moving_averages = (
+            tuple(moving_averages)
+            if moving_averages is not None
+            else (
+                (moving_average,)
+                if moving_average is not None
+                else (
+                    MovingAverageConfig(fast_window=3, slow_window=10),
+                    MovingAverageConfig(fast_window=5, slow_window=20),
+                    MovingAverageConfig(fast_window=10, slow_window=30),
+                    MovingAverageConfig(fast_window=20, slow_window=50),
+                    MovingAverageConfig(fast_window=50, slow_window=100),
+                    MovingAverageConfig(fast_window=50, slow_window=200),
+                )
+            )
+        )
+        if not configured_moving_averages:
+            raise ValueError("At least one moving-average configuration is required.")
+        moving_average_keys = [
+            (item.fast_window, item.slow_window)
+            for item in configured_moving_averages
+        ]
+        if len(moving_average_keys) != len(set(moving_average_keys)):
+            raise ValueError("Moving-average configurations must be unique.")
+        self._moving_averages = configured_moving_averages
+        self._volume_analysis = volume_analysis or VolumeAnalysisConfig()
 
     def analyze(
         self,
@@ -85,15 +126,33 @@ class DeterministicTechnicalAnalysisToolkit:
                 )
             levels, level_warnings = self._support_and_resistance(price_series)
             patterns = self._head_and_shoulders(price_series)
+            moving_averages, moving_average_warnings = self._moving_averages_for(
+                price_series
+            )
+            volume_observation, volume_warning = self._volume_observation(
+                price_series
+            )
+            daily_volatility = self._daily_return_volatility(
+                price_series.bars
+            )
             warnings.extend(level_warnings)
+            warnings.extend(moving_average_warnings)
+            if volume_warning is not None:
+                warnings.append(volume_warning)
             assets.append(
                 AssetTechnicalAnalysis(
                     artifact_id=price_series.artifact_id,
                     symbol=price_series.symbol,
+                    first_bar_timestamp=price_series.bars[0].timestamp,
                     last_bar_timestamp=price_series.bars[-1].timestamp,
+                    observation_count=len(price_series.bars),
                     last_close=price_series.bars[-1].close,
+                    daily_return_volatility=daily_volatility,
+                    annualized_volatility=daily_volatility * sqrt(252.0),
                     support_resistance_levels=levels,
                     chart_patterns=patterns,
+                    moving_averages=moving_averages,
+                    volume_observation=volume_observation,
                 )
             )
 
@@ -104,6 +163,158 @@ class DeterministicTechnicalAnalysisToolkit:
             as_of_date=as_of_date,
             assets=assets,
             warnings=warnings,
+        )
+
+    @staticmethod
+    def _daily_return_volatility(bars: list[PriceBar]) -> float:
+        """Return sample volatility of point-in-time close-to-close returns."""
+
+        returns = [
+            current.close / previous.close - 1.0
+            for previous, current in zip(bars, bars[1:], strict=False)
+        ]
+        if len(returns) < 2:
+            return 0.0
+        mean_return = sum(returns) / len(returns)
+        variance = sum(
+            (period_return - mean_return) ** 2
+            for period_return in returns
+        ) / (len(returns) - 1)
+        return sqrt(max(variance, 0.0))
+
+    def _moving_averages_for(
+        self,
+        series: PriceSeries,
+    ) -> tuple[list[MovingAverageObservation], list[str]]:
+        observations: list[MovingAverageObservation] = []
+        warnings: list[str] = []
+        for config in self._moving_averages:
+            observation = self._moving_average_observation(series, config)
+            if observation is None:
+                warnings.append(
+                    f"{series.symbol}: moving-average evidence "
+                    f"{config.fast_window}/{config.slow_window} requires at "
+                    f"least {config.slow_window} bars."
+                )
+            else:
+                observations.append(observation)
+        return observations, warnings
+
+    def _moving_average_observation(
+        self,
+        series: PriceSeries,
+        config: MovingAverageConfig,
+    ) -> MovingAverageObservation | None:
+        bars = series.bars
+        if len(bars) < config.slow_window:
+            return None
+
+        closes = [bar.close for bar in bars]
+
+        def average(end_index: int, window: int) -> float:
+            values = closes[end_index - window + 1 : end_index + 1]
+            return sum(values) / window
+
+        latest_index = len(bars) - 1
+        fast_average = average(latest_index, config.fast_window)
+        slow_average = average(latest_index, config.slow_window)
+        spread = (fast_average - slow_average) / slow_average
+        if abs(spread) <= config.neutral_band_percent:
+            relationship = MovingAverageRelationship.NEUTRAL
+        elif spread > 0:
+            relationship = MovingAverageRelationship.BULLISH
+        else:
+            relationship = MovingAverageRelationship.BEARISH
+
+        latest_cross_direction: MovingAverageCrossDirection | None = None
+        latest_cross_timestamp: datetime | None = None
+        latest_cross_index: int | None = None
+        previous_difference: float | None = None
+        for index in range(config.slow_window - 1, len(bars)):
+            difference = (
+                average(index, config.fast_window)
+                - average(index, config.slow_window)
+            )
+            if previous_difference is not None:
+                if previous_difference <= 0 < difference:
+                    latest_cross_direction = MovingAverageCrossDirection.BULLISH
+                    latest_cross_timestamp = bars[index].timestamp
+                    latest_cross_index = index
+                elif previous_difference >= 0 > difference:
+                    latest_cross_direction = MovingAverageCrossDirection.BEARISH
+                    latest_cross_timestamp = bars[index].timestamp
+                    latest_cross_index = index
+            previous_difference = difference
+
+        evidence_key = self._evidence_key(
+            symbol=series.symbol,
+            artifact_id=series.artifact_id,
+        )
+        return MovingAverageObservation(
+            moving_average_id=(
+                f"{evidence_key}.moving-average."
+                f"{config.fast_window}-{config.slow_window}"
+            ),
+            fast_window=config.fast_window,
+            slow_window=config.slow_window,
+            fast_average=fast_average,
+            slow_average=slow_average,
+            spread_percent=spread * 100.0,
+            relationship=relationship,
+            latest_cross_direction=latest_cross_direction,
+            latest_cross_timestamp=latest_cross_timestamp,
+            bars_since_latest_cross=(
+                latest_index - latest_cross_index
+                if latest_cross_index is not None
+                else None
+            ),
+        )
+
+    def _volume_observation(
+        self,
+        series: PriceSeries,
+    ) -> tuple[VolumeObservation | None, str | None]:
+        config = self._volume_analysis
+        bars = series.bars
+        if len(bars) < config.lookback_window + 1:
+            return None, (
+                f"{series.symbol}: volume evidence requires at least "
+                f"{config.lookback_window + 1} bars."
+            )
+        latest_volume = bars[-1].volume
+        prior_volumes = [
+            bar.volume
+            for bar in bars[-(config.lookback_window + 1) : -1]
+            if bar.volume is not None
+        ]
+        if latest_volume is None or len(prior_volumes) < config.lookback_window:
+            return None, (
+                f"{series.symbol}: complete volume evidence was unavailable "
+                f"for the latest bar and prior {config.lookback_window} bars."
+            )
+        average_prior_volume = sum(prior_volumes) / len(prior_volumes)
+        if average_prior_volume <= 0:
+            return None, (
+                f"{series.symbol}: prior average volume was not positive."
+            )
+        evidence_key = self._evidence_key(
+            symbol=series.symbol,
+            artifact_id=series.artifact_id,
+        )
+        latest_return = bars[-1].close / bars[-2].close - 1.0
+        return (
+            VolumeObservation(
+                volume_id=(
+                    f"{evidence_key}.volume.{config.lookback_window}"
+                ),
+                lookback_window=config.lookback_window,
+                latest_volume=latest_volume,
+                average_prior_volume=average_prior_volume,
+                relative_volume=latest_volume / average_prior_volume,
+                available_observations=len(prior_volumes) + 1,
+                latest_close_return_percent=latest_return * 100.0,
+            ),
+            None,
         )
 
     def _support_and_resistance(

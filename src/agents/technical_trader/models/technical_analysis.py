@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 
@@ -131,15 +131,129 @@ class ChartPatternObservation(ContractModel):
     notes: list[NonEmptyStr] = Field(default_factory=list)
 
 
+class MovingAverageRelationship(StrEnum):
+    BULLISH = "bullish"
+    BEARISH = "bearish"
+    NEUTRAL = "neutral"
+
+
+class MovingAverageCrossDirection(StrEnum):
+    BULLISH = "bullish"
+    BEARISH = "bearish"
+
+
+class MovingAverageConfig(ContractModel):
+    fast_window: int = Field(default=20, ge=2, le=252)
+    slow_window: int = Field(default=50, ge=3, le=504)
+    neutral_band_percent: float = Field(default=0.001, ge=0, le=0.05)
+
+    @model_validator(mode="after")
+    def require_ordered_windows(self) -> "MovingAverageConfig":
+        if self.fast_window >= self.slow_window:
+            raise ValueError("fast_window must be below slow_window.")
+        return self
+
+
+class MovingAverageObservation(ContractModel):
+    moving_average_id: NonEmptyStr
+    fast_window: int = Field(ge=2)
+    slow_window: int = Field(ge=3)
+    fast_average: float = Field(gt=0)
+    slow_average: float = Field(gt=0)
+    spread_percent: float
+    relationship: MovingAverageRelationship
+    latest_cross_direction: MovingAverageCrossDirection | None = None
+    latest_cross_timestamp: datetime | None = None
+    bars_since_latest_cross: int | None = Field(default=None, ge=0)
+
+
+class VolumeAnalysisConfig(ContractModel):
+    lookback_window: int = Field(default=20, ge=2, le=252)
+
+
+class VolumeObservation(ContractModel):
+    volume_id: NonEmptyStr
+    lookback_window: int = Field(ge=2)
+    latest_volume: float = Field(ge=0)
+    average_prior_volume: float = Field(gt=0)
+    relative_volume: float = Field(ge=0)
+    available_observations: int = Field(ge=1)
+    latest_close_return_percent: float
+
+
+class TechnicalHorizonContext(ContractModel):
+    label: NonEmptyStr
+    horizon_trading_days: int = Field(ge=1, le=1260)
+    maximum_holding_bars: int = Field(ge=1, le=1260)
+    moving_average_windows: list[MovingAverageConfig] = Field(min_length=1)
+    maximum_recent_cross_age_bars: int = Field(ge=1)
+    maximum_level_distance_percent: float = Field(gt=0)
+    minimum_training_observations: int = Field(ge=5)
+    resolution_source: Literal["pm_mandate", "conservative_default"] = (
+        "pm_mandate"
+    )
+    resolution_note: NonEmptyStr | None = None
+
+
+class TechnicalOpportunity(ContractModel):
+    opportunity_id: NonEmptyStr
+    rank: int = Field(ge=1)
+    symbol: NonEmptyStr
+    executor_id: NonEmptyStr
+    evidence_ids: list[NonEmptyStr] = Field(min_length=1)
+    score: float = Field(ge=0, le=1)
+    score_components: dict[str, float] = Field(default_factory=dict)
+    horizon_trading_days: int = Field(ge=1)
+    rationale: NonEmptyStr
+    additional_fields: dict[str, Any] = Field(default_factory=dict)
+
+
 class AssetTechnicalAnalysis(ContractModel):
     artifact_id: NonEmptyStr
     symbol: NonEmptyStr
+    first_bar_timestamp: datetime | None = None
     last_bar_timestamp: datetime
+    observation_count: int | None = Field(default=None, ge=5)
     last_close: float = Field(gt=0)
+    daily_return_volatility: float | None = Field(default=None, ge=0)
+    annualized_volatility: float | None = Field(default=None, ge=0)
     support_resistance_levels: list[SupportResistanceLevel] = Field(
         default_factory=list
     )
     chart_patterns: list[ChartPatternObservation] = Field(default_factory=list)
+    moving_averages: list[MovingAverageObservation] = Field(
+        default_factory=list
+    )
+    moving_average: MovingAverageObservation | None = None
+    volume_observation: VolumeObservation | None = None
+
+    @model_validator(mode="after")
+    def synchronize_moving_average_compatibility(
+        self,
+    ) -> "AssetTechnicalAnalysis":
+        observations = list(self.moving_averages)
+        if self.moving_average is not None and all(
+            item.moving_average_id != self.moving_average.moving_average_id
+            for item in observations
+        ):
+            observations.append(self.moving_average)
+        observations.sort(key=lambda item: (item.slow_window, item.fast_window))
+        legacy = self.moving_average
+        if legacy is None and observations:
+            legacy = next(
+                (
+                    item
+                    for item in observations
+                    if (item.fast_window, item.slow_window) == (20, 50)
+                ),
+                observations[0],
+            )
+        object.__setattr__(self, "moving_averages", observations)
+        object.__setattr__(self, "moving_average", legacy)
+        return self
+
+    def available_moving_averages(self) -> tuple[MovingAverageObservation, ...]:
+        return tuple(self.moving_averages)
 
 
 class TechnicalAnalysisReport(ContractModel):
@@ -150,6 +264,10 @@ class TechnicalAnalysisReport(ContractModel):
     toolkit_version: NonEmptyStr
     as_of_date: date
     assets: list[AssetTechnicalAnalysis] = Field(min_length=1)
+    horizon_context: TechnicalHorizonContext | None = None
+    horizon_opportunities: list[TechnicalOpportunity] = Field(
+        default_factory=list
+    )
     warnings: list[NonEmptyStr] = Field(default_factory=list)
 
     def level_ids(self) -> set[str]:
@@ -188,4 +306,35 @@ class TechnicalAnalysisReport(ContractModel):
                 for asset in self.assets
                 for pattern in asset.chart_patterns
             ),
+            *(
+                observation.moving_average_id
+                for asset in self.assets
+                for observation in asset.available_moving_averages()
+            ),
+            *(
+                asset.volume_observation.volume_id
+                for asset in self.assets
+                if asset.volume_observation is not None
+            ),
+        }
+
+    def pattern_ids(self) -> set[str]:
+        return {
+            pattern.pattern_id
+            for asset in self.assets
+            for pattern in asset.chart_patterns
+        }
+
+    def moving_average_ids(self) -> set[str]:
+        return {
+            observation.moving_average_id
+            for asset in self.assets
+            for observation in asset.available_moving_averages()
+        }
+
+    def volume_ids(self) -> set[str]:
+        return {
+            asset.volume_observation.volume_id
+            for asset in self.assets
+            if asset.volume_observation is not None
         }

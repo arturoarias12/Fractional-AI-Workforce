@@ -35,8 +35,30 @@ Raw OHLCV payloads are not copied into this summary.
 - `backtest_request`: candidate, finalized plan, data references, and mandate
   constraints sent to the engine.
 
-No rule becomes Risk-eligible without citing a non-fallback support/resistance
-level on the correct side of the latest close.
+The model-selectable package-level executor is
+`technical.multi_asset_portfolio.v1`. Its parameters contain:
+
+- `target_asset_count=10` and the actual `selected_asset_count`;
+- the portfolio gross target and equal-weight allocation method;
+- common sleeve risk parameters;
+- an omission rationale when fewer than 10 ETFs qualify; and
+- one to 10 unique sleeves, each containing a symbol, deterministic child
+  executor, evidence IDs, positive-expectation rationale, and family-specific
+  parameters. Evidence-derived numeric values are bound by code from the cited
+  IDs rather than transcribed by the model.
+- code-bound opportunity ID, rank, and score for every sleeve, proving that the
+  selection matched the mandate-specific frozen-evidence screen.
+
+Every sleeve is independently evidence-validated before the one portfolio
+backtest begins. The top-level evidence IDs must equal the union of all sleeve
+IDs, and evidence cannot be reused across symbols.
+
+After a second LLM Technical review, the portfolio is backtested. Code retains
+it only when its out-of-sample `total_return` strictly exceeds the requested
+benchmark return. Otherwise, the final candidate uses the code-owned
+`technical.benchmark_buy_and_hold_fallback.v1` executor and the benchmark is
+backtested again under the same plan, costs, delayed-fill, and liquidation
+assumptions. The model cannot select or author this fallback.
 
 ## Evaluation
 
@@ -49,6 +71,32 @@ level on the correct side of the latest close.
   the engine.
 - `constraint_assessment`: declared mappings and violations requiring Risk
   validation.
+- `additional_fields.technical_horizon`: resolved holding limit, permitted
+  lookbacks, actionability distance, evidence warm-up policy, and whether the
+  horizon came from the PM mandate or the conservative audited fallback.
+- `additional_fields.evaluation_semantics`: explicitly distinguishes the PM
+  holding horizon from the longer repeated-occurrence evaluation window.
+- `additional_fields.candidate_review`: records whether the second Technical
+  review was applied and the before/after selected symbols.
+- `additional_fields.benchmark_selection`: records the exact Technical and
+  benchmark values, decision, and final fallback identity.
+- `additional_fields.technical_candidate_before_benchmark_fallback`: when the
+  fallback is used, preserves the rejected Technical candidate, request,
+  result, and ledger for audit.
+
+The default benchmark gate is an injectable Technical policy. It deliberately
+uses the same held-out window as a prototype model-selection gate, so the
+package marks independent post-selection validation as still required. It must
+not be described as an untouched second out-of-sample test.
+
+The current policy also requires the requested Backtest Plan window to exactly
+equal the validation split. This prevents comparing held-out Technical metrics
+with benchmark metrics calculated over a different period. When fallback is
+used, `additional_fields.benchmark_selection.tracking_disclosure` records that
+the shared benchmark reference enters on its first resolved bar while the
+executable fallback obeys the plan's signal delay. It records both returns and
+their difference rather than presenting ordinary execution lag as unexplained
+underperformance.
 
 ## Status and resilience
 
@@ -59,3 +107,6 @@ level on the correct side of the latest close.
 
 Diagnostics are operational content. They are retained for orchestration and
 must not be treated as trading instructions.
+
+The result remains one ordinary shared package. Risk, Reporting, PM, Memory,
+and productivity tooling do not need a Technical-specific batch schema.

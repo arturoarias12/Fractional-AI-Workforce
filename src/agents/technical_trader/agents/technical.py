@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 from protocols import SpecialistId
 
+from ..benchmark import BenchmarkSelectionPolicy
 from ..execution import ExecutionPolicy
 from ..model_client import MetricsSink, ModelClient
 from ..prompts import (
@@ -33,6 +34,7 @@ class TechnicalTraderAgent(StagedTraderAgent):
         validation_split_policy: ValidationSplitPolicy | None = None,
         technical_input_adapter: TechnicalAnalysisInputAdapter | None = None,
         technical_toolkit: TechnicalAnalysisToolkit | None = None,
+        benchmark_selection_policy: BenchmarkSelectionPolicy | None = None,
         metrics_sink: MetricsSink | None = None,
         execution_policy: ExecutionPolicy | None = None,
     ) -> None:
@@ -55,6 +57,7 @@ class TechnicalTraderAgent(StagedTraderAgent):
             ),
             system_prompt=TECHNICAL_TRADER_SYSTEM_PROMPT,
             lens_requirements=TECHNICAL_LENS_REQUIREMENTS,
+            benchmark_selection_policy=benchmark_selection_policy,
             metrics_sink=metrics_sink,
             execution_policy=execution_policy,
         )
@@ -63,9 +66,14 @@ class TechnicalTraderAgent(StagedTraderAgent):
     def capabilities(self) -> tuple[str, ...]:
         return (
             "technical_candidate_generation",
+            "technical_candidate_self_review",
+            "multi_asset_portfolio_generation",
             "price_volume_data_request",
             "support_resistance_detection",
             "head_and_shoulders_detection",
             "inverse_head_and_shoulders_detection",
+            "moving_average_analysis",
+            "relative_volume_analysis",
             "deterministic_backtest_interpretation",
+            "deterministic_benchmark_fallback_selection",
         )

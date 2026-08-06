@@ -72,6 +72,13 @@ Data Service integration details to confirm:
 - maximum payload size; and
 - provenance semantics.
 
+The agent deterministically resolves the PM's investment horizon after the
+training-only report is built. It supports horizon-compatible moving-average
+pairs from 3/10 through 50/200, requires at least 252 training observations for
+the opportunity screen, and records unavailable assets instead of fabricating
+short histories. This is an agent-local interpretation of the PM mandate; it
+does not change the shared Data Service contract.
+
 ## 3. Backtest Engine adapter
 
 Implement:
@@ -94,6 +101,12 @@ The request contains:
 - requested metrics and a code-owned validation split;
 - data references; and
 - PM mandate constraints.
+
+The selected rule carries a mandate-derived maximum holding period and cites
+only opportunities that passed the Technical horizon screen. The historical
+validation window may be much longer: it measures repeated occurrences of the
+same horizon-length decision and must not be interpreted as the strategy's
+holding horizon. No new Backtest Engine request field is required.
 
 The engine must return
 `computed_by="deterministic_backtest_engine"`. The Technical Trader rejects
@@ -118,6 +131,25 @@ runtime = create_technical_trader_runtime(
     validation_split_policy=shared_validation_policy,
 )
 ```
+
+For the complete current Technical path, register both the model-selectable
+`technical.multi_asset_portfolio.v1` executor and the code-owned
+`technical.benchmark_buy_and_hold_fallback.v1` executor. The latter is hidden
+from proposal prompts. If the reviewed Technical candidate does not strictly
+beat the requested benchmark's out-of-sample `total_return`, the agent builds
+that fallback itself and asks the engine to evaluate it under the same plan.
+An engine that has not yet registered the additive fallback executor receives
+no changed protocol or method call, but that underperforming run settles as
+partial instead of silently returning a weaker strategy.
+
+The gate currently requires the requested plan window and validation split to
+coincide because the shared engine reports benchmark metrics for the complete
+requested window. A mismatch settles the Technical run as partial instead of
+performing an invalid cross-period comparison. The shared engine's benchmark
+reference enters at its first bar, while the executable fallback observes the
+plan's ordinary signal delay. The agent records the resulting tracking
+difference explicitly; it does not alter shared execution or benchmark
+semantics.
 
 An unknown executor is rejected before the engine runs. If no registered
 executor exactly implements the proposed logic, the run settles as partial;
@@ -146,15 +178,35 @@ Risk should still independently review look-ahead bias, overfitting, weak
 out-of-sample behavior, technical-pattern selection, mandate alignment, and
 execution assumptions.
 
+The public runtime produces one shared package containing either the winning
+multi-ETF Technical rule or its benchmark fallback:
+
+```python
+package = await runtime.research(
+    mandate,
+    execution_context=execution_context,
+)
+```
+
+Route that ordinary `TraderStrategyPackage` through the existing Risk handoff.
+The Technical candidate's deterministic executor owns its internal
+equal-weight ETF sleeves. If the benchmark fallback becomes final, Risk can
+inspect the rejected Technical candidate and its original backtest under
+`additional_fields.technical_candidate_before_benchmark_fallback`. In both
+cases Risk receives one ordinary package, not multiple artifacts.
+
 ## 5. LangGraph integration
 
-`make_langgraph_node` defaults to:
+`make_langgraph_node` implements the required Technical Trader boundary:
 
 - input: `pm_mandate`
 - output: `technical_trader_package`
 
 Both keys are configurable. The node returns a state update dictionary and
 does not mutate the input mapping.
+
+The output is the same singular shared contract expected from the Fundamental
+and Quant trader branches. No production-graph batch adapter is required.
 
 The project's optional `langgraph` dependency installs `langgraph>=1.2,<2`.
 `agents.technical_trader.langgraph_adapter` can compile the real runtime as a

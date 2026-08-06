@@ -22,6 +22,7 @@ from protocols import (
 )
 
 from .agents import TechnicalTraderAgent
+from .benchmark import BenchmarkSelectionPolicy
 from .errors import MandateValidationError
 from .execution import ExecutionPolicy
 from .model_client import MetricsSink, ModelClient
@@ -53,6 +54,8 @@ class TechnicalTraderRuntime:
             ResearchExecutionContext | Mapping[str, Any] | None
         ) = None,
     ) -> TraderStrategyPackage:
+        """Produce one shared package containing one multi-ETF strategy."""
+
         validated = self._validate_mandate(mandate)
         context = self._validate_execution_context(
             mandate=validated,
@@ -167,6 +170,7 @@ def create_technical_trader_runtime(
     validation_split_policy: ValidationSplitPolicy | None = None,
     technical_input_adapter: TechnicalAnalysisInputAdapter | None = None,
     technical_toolkit: TechnicalAnalysisToolkit | None = None,
+    benchmark_selection_policy: BenchmarkSelectionPolicy | None = None,
     metrics_sink: MetricsSink | None = None,
     execution_policy: ExecutionPolicy | None = None,
 ) -> TechnicalTraderRuntime:
@@ -180,6 +184,7 @@ def create_technical_trader_runtime(
             validation_split_policy=validation_split_policy,
             technical_input_adapter=technical_input_adapter,
             technical_toolkit=technical_toolkit,
+            benchmark_selection_policy=benchmark_selection_policy,
             metrics_sink=metrics_sink,
             execution_policy=policy,
         ),

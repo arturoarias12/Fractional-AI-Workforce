@@ -8,10 +8,11 @@ from math import isfinite
 
 MAX_TIMEOUT_SECONDS = 300.0
 DEFAULT_MODEL_CALL_TIMEOUT_SECONDS = 45.0
-DEFAULT_DATA_SERVICE_TIMEOUT_SECONDS = 60.0
-DEFAULT_BACKTEST_TIMEOUT_SECONDS = 90.0
+DEFAULT_DATA_SERVICE_TIMEOUT_SECONDS = 30.0
+DEFAULT_BACKTEST_TIMEOUT_SECONDS = 40.0
 DEFAULT_TRADER_TIMEOUT_SECONDS = MAX_TIMEOUT_SECONDS
-EXPECTED_MODEL_CALLS_PER_TRADER_RUN = 3
+EXPECTED_MODEL_CALLS_PER_TRADER_RUN = 4
+EXPECTED_BACKTEST_CALLS_PER_TRADER_RUN = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +70,7 @@ class ExecutionPolicy:
             * EXPECTED_MODEL_CALLS_PER_TRADER_RUN
             + self.data_service_timeout_seconds
             + self.backtest_timeout_seconds
+            * EXPECTED_BACKTEST_CALLS_PER_TRADER_RUN
         )
         if aggregate_component_budget >= self.trader_timeout_seconds:
             raise ValueError(
