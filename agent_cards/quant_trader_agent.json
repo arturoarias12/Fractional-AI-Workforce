@@ -3,7 +3,7 @@
   "agent_id": "quant_trader_agent",
   "display_name": "Quant Trader Agent",
   "description": "Dynamically proposes cross-asset statistical mean-reversion strategies from point-in-time correlation and half-life evidence, then hands them to the shared deterministic Backtest Engine for evaluation.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "role_type": "specialist",
   "hireable": true,
   "implementation_status": "prototype",
@@ -24,7 +24,8 @@
   "implementation_notes": [
     "src/agents/quant_trader implements agents.base.TraderAgent structurally; see docs/quant_trader.md for the full design.",
     "Registers strategy executor 'quant_trader.cross_asset_spread_mean_reversion.v1' with tools.backtest_engine.",
-    "data_service and validation_split_policy are still provisional team-owned boundaries (docs/implementation_boundaries.md); src/agents/quant_trader/examples contains dev-only static stand-ins used for local testing only, not for production wiring.",
+    "data_service now resolves to the real shared services.data_service.DataService (YFinanceDataService/YFinanceBacktestDataResolver); examples/run_demo.py wires it in directly. validation_split_policy is still a provisional team-owned boundary (docs/implementation_boundaries.md).",
+    "src/agents/quant_trader/examples/static_data_service.py retains Quant Trader's earlier dev-only DataService/BacktestDataResolver stand-ins (yfinance, Financial Modeling Prep, Stooq, Alpha Vantage, static xlsx), commented out, as fallbacks only - not used by default.",
     "Interpretation is currently template-generated (interpretation.py), not model-authored; no model_client dependency is wired in yet."
   ]
 }
