@@ -88,23 +88,59 @@ No leverage, no shorting, one position at a time.
 
 ## Running it locally
 
-The shared `DataService` and a production `ValidationSplitPolicy` are still
-provisional (`docs/implementation_boundaries.md`), so
-`src/agents/quant_trader/examples/` includes dev-only stand-ins that read the
-static `ETF_historical_prices.xlsx` file directly - no live API calls, no
-LLM calls. They exist only to prove the real `QuantTraderAgent` and the real
-`DeterministicBacktestEngine` work together end to end; nothing in
-`agent.py` or `strategy.py` depends on them.
+Quant Trader now calls the real, shared `DataService` -
+`services.data_service.YFinanceDataService` / `YFinanceBacktestDataResolver`
+(built on Yiran's workstream) - the same boundary the other trader agents
+use. `agent.py` was never coupled to any particular implementation (it only
+depends on the `DataService` Protocol), so this was purely a wiring change in
+`examples/run_demo.py`, which now imports directly from `services` instead of
+from a Quant-Trader-only adapter.
 
 ```bash
 pip install -e ".[quant-demo]"
-# place ETF_historical_prices.xlsx in the repository root
 python -m agents.quant_trader.examples.run_demo
 ```
 
 Expected output includes the discovered pair, its correlation/half-life
 evidence, the executor's parameters, and both the training-window and
 held-out test-window metrics reported by the real backtest engine.
+
+**Old process, kept as a fallback.** Before the shared DataService existed,
+this package carried its own dev-only stand-ins in
+`examples/static_data_service.py` so the real `QuantTraderAgent` and the real
+`DeterministicBacktestEngine` could still be run and demonstrated end to end.
+All of them are kept, commented out, satisfying the exact same Protocols, in
+the order they were actually tried during development:
+
+0. **`YFinanceDataService` / `YFinanceDataResolver` (dev-only)** - the
+   Quant-Trader-only adapter this package used to run live before the shared
+   `services.data_service` landed. Functionally identical to
+   `services.data_service.YFinanceDataService` / `YFinanceBacktestDataResolver`.
+1. **`FMPDataService` / `FMPDataResolver`** - Financial Modeling Prep's REST
+   API. Its `historical-price-eod/full` endpoint turned out to require a
+   paid plan. Needs an `FMP_API_KEY` environment variable if uncommented.
+2. **`StooqDataService` / `StooqDataResolver`** - Stooq's free CSV endpoint
+   (`stooq.com/q/d/l`). Widely documented online as working, but returns a
+   404 in practice for direct programmatic access.
+3. **`AlphaVantageDataService` / `AlphaVantageDataResolver`** - has a real
+   free tier and worked, but that tier only returns the last ~100 trading
+   days per symbol (`outputsize=full`, needed for real history, is
+   premium-only). This project's `discovery.py` needs at least
+   `MIN_HISTORY_DAYS` (750) days of shared history to trust a correlation
+   or fit a mean-reversion half-life, so 100 days isn't usable here - kept
+   in case a paid plan becomes available, or for a different use case that
+   doesn't need deep history. Needs an `ALPHA_VANTAGE_API_KEY` environment
+   variable if uncommented.
+4. **`StaticExcelDataService` / `StaticExcelDataResolver`** - the original
+   implementation, reads `ETF_historical_prices.xlsx` directly with no
+   network calls at all. Useful for running fully offline.
+
+To fall back: uncomment the desired class(es) in `static_data_service.py`,
+then uncomment the matching import and swap the `data_service`/
+`backtest_engine` construction in `run_demo.py`'s `main()` (the commented
+block is right there, directly under the primary path). If the shared
+DataService is ever unavailable, the static xlsx fallback is the most
+reliable option since it has no external dependency at all.
 
 ## Known limitations / open questions
 
@@ -125,11 +161,13 @@ held-out test-window metrics reported by the real backtest engine.
   candidate without that caveat attached.
 - **No transaction-cost stress testing** beyond whatever
   `ExecutionAssumptions` the engine is configured with by default.
-- **Data adapter is a documented seam, not a finished contract.**
-  `data_adapter.extract_price_panel` assumes `DataArtifact.analysis_payload`
-  is either a `{symbol: bars}` mapping or a flat bar sequence tagged with the
-  artifact's `asset_scope`. Once the real `DataService` implementation lands,
-  only this one function should need to change.
+- **Data adapter seam: now verified against the real DataService.**
+  `data_adapter.extract_price_panel` supports `DataArtifact.analysis_payload`
+  as either a `{symbol: bars}` mapping or a flat bar sequence tagged with the
+  artifact's `asset_scope`. `services.data_service.YFinanceDataService`
+  returns the `{symbol: bars}` mapping form, so no change was needed here -
+  confirmed with a mocked end-to-end run through the real `DataService` and
+  the real `DeterministicBacktestEngine`.
 
 ## Files
 
