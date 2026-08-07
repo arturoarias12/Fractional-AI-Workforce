@@ -20,11 +20,16 @@ in ``static_data_service.py``, commented out, as documented fallbacks in
 case the shared service is ever unavailable. See the commented import
 block below and the "Fallback" swap-in block in ``main()``.
 
-Note: the demo below restricts the mandate to a small ticker subset so it
-runs quickly and stays polite to yfinance's unofficial, unauthenticated
-endpoint. Widen ``permitted_asset_universe`` (or drop it entirely to scan
-the full ``DEFAULT_UNIVERSE`` in ``static_data_service.py``) if you want a
-bigger scan.
+Note: this demo now scans the full 120-ticker ``DEFAULT_UNIVERSE`` (imported
+from ``static_data_service.py``, the same fixture universe the original
+static-xlsx prototype used). That means up to 120 live yfinance calls per
+run (fewer once ``_bar_cache`` warms up within the run), so it is noticeably
+slower than a small-subset scan. The real ``services.data_service.
+YFinanceDataService`` requires an explicit non-empty ``asset_universe`` -
+unlike the old dev-only adapter, it does not fall back to a default list on
+its own - so the full universe is passed explicitly via
+``permitted_asset_universe`` below. Trim ``FULL_UNIVERSE`` to a smaller list
+if you want a faster run.
 """
 
 from __future__ import annotations
@@ -39,6 +44,7 @@ from services import YFinanceBacktestDataResolver, YFinanceDataService
 from tools import DeterministicBacktestEngine
 
 from .. import QuantTraderAgent, QuantTraderRuntime, cross_asset_spread_executor
+from .static_data_service import DEFAULT_UNIVERSE  # full 120-ticker fixture universe
 # Old process, kept as a fallback (Quant-Trader-only adapters, used before
 # the shared services.data_service existed). All four are commented out in
 # static_data_service.py itself, in the order they were actually tried:
@@ -49,10 +55,9 @@ from .. import QuantTraderAgent, QuantTraderRuntime, cross_asset_spread_executor
 # from .static_data_service import StaticExcelDataResolver, StaticExcelDataService  # fully offline
 from .validation_split import PercentileValidationSplitPolicy
 
-DEMO_UNIVERSE = [
-    "EWA", "EWC", "EWJ", "EWU", "QQQ", "IVV", "SCHD", "JEPI", "JEPQ", "XLK",
-    "XLF", "XLE", "SMH", "GDX", "TLT",
-]
+# Full 120-ticker universe (see DEFAULT_UNIVERSE in static_data_service.py).
+# Swap in a shorter list here for a faster run.
+FULL_UNIVERSE = list(DEFAULT_UNIVERSE)
 
 
 async def main() -> None:
@@ -97,7 +102,7 @@ async def main() -> None:
             "Research-stage exploration of cross-asset mean-reversion "
             "strategies across the permitted ETF universe."
         ),
-        permitted_asset_universe=DEMO_UNIVERSE,
+        permitted_asset_universe=FULL_UNIVERSE,
     )
 
     package = await runtime.research(mandate)
