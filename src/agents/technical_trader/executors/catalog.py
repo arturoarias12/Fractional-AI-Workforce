@@ -9,6 +9,18 @@ from typing import Literal
 SUPPORT_REACTION_EXECUTOR_ID = "technical.support_reaction.v1"
 RESISTANCE_BREAKOUT_EXECUTOR_ID = "technical.resistance_breakout.v1"
 MOVING_AVERAGE_TREND_EXECUTOR_ID = "technical.moving_average_trend.v1"
+HORIZON_ADAPTIVE_TREND_EXECUTOR_ID = (
+    "technical.horizon_adaptive_trend.v1"
+)
+ROLLING_SUPPORT_REACTION_EXECUTOR_ID = (
+    "technical.rolling_support_reaction.v1"
+)
+ROLLING_RESISTANCE_BREAKOUT_EXECUTOR_ID = (
+    "technical.rolling_resistance_breakout.v1"
+)
+ROLLING_VOLUME_BREAKOUT_EXECUTOR_ID = (
+    "technical.rolling_volume_confirmed_breakout.v1"
+)
 VOLUME_BREAKOUT_EXECUTOR_ID = "technical.volume_confirmed_breakout.v1"
 INVERSE_PATTERN_EXECUTOR_ID = (
     "technical.inverse_head_shoulders_breakout.v1"
@@ -82,6 +94,86 @@ TECHNICAL_EXECUTOR_SPECS: tuple[TechnicalExecutorSpec, ...] = (
             "omission_rationale",
             "common_risk_parameters",
             "sleeves",
+        ),
+    ),
+    TechnicalExecutorSpec(
+        executor_id=ROLLING_SUPPORT_REACTION_EXECUTOR_ID,
+        strategy_family="rolling_support_reaction",
+        description=(
+            "Long-only support reaction whose reliable pivot-cluster anchor "
+            "is recalculated from past bars at the horizon review cadence."
+        ),
+        evidence_requirements=("support",),
+        parameters=(
+            *_RISK_PARAMETERS,
+            "review_interval_bars",
+            "rolling_level_lookback_bars",
+            "pivot_window",
+            "merge_tolerance_percent",
+            "min_touches",
+            "maximum_level_distance_percent",
+            "entry_buffer_percent",
+            "support_entry_floor_buffer_percent",
+            "technical_invalidation_buffer_percent",
+        ),
+    ),
+    TechnicalExecutorSpec(
+        executor_id=ROLLING_RESISTANCE_BREAKOUT_EXECUTOR_ID,
+        strategy_family="rolling_resistance_breakout",
+        description=(
+            "Long-only breakout whose reliable pivot-cluster resistance is "
+            "recalculated from past bars at the horizon review cadence."
+        ),
+        evidence_requirements=("resistance",),
+        parameters=(
+            *_RISK_PARAMETERS,
+            "review_interval_bars",
+            "rolling_level_lookback_bars",
+            "pivot_window",
+            "merge_tolerance_percent",
+            "min_touches",
+            "maximum_level_distance_percent",
+            "entry_buffer_percent",
+            "technical_invalidation_buffer_percent",
+        ),
+    ),
+    TechnicalExecutorSpec(
+        executor_id=HORIZON_ADAPTIVE_TREND_EXECUTOR_ID,
+        strategy_family="horizon_adaptive_trend",
+        description=(
+            "Long-only rolling fast/slow moving-average trend state with "
+            "horizon-specific windows and review cadence. It may enter an "
+            "already-established bullish trend instead of waiting for a new "
+            "crossover after the evaluation boundary."
+        ),
+        evidence_requirements=("moving_average",),
+        parameters=(
+            *_RISK_PARAMETERS,
+            "fast_window",
+            "slow_window",
+            "review_interval_bars",
+        ),
+    ),
+    TechnicalExecutorSpec(
+        executor_id=ROLLING_VOLUME_BREAKOUT_EXECUTOR_ID,
+        strategy_family="rolling_volume_confirmed_breakout",
+        description=(
+            "Long-only rolling-resistance breakout that also requires current "
+            "volume to exceed its prior average by the configured multiple."
+        ),
+        evidence_requirements=("resistance", "volume"),
+        parameters=(
+            *_RISK_PARAMETERS,
+            "review_interval_bars",
+            "rolling_level_lookback_bars",
+            "pivot_window",
+            "merge_tolerance_percent",
+            "min_touches",
+            "maximum_level_distance_percent",
+            "entry_buffer_percent",
+            "technical_invalidation_buffer_percent",
+            "volume_lookback_bars",
+            "minimum_relative_volume",
         ),
     ),
     TechnicalExecutorSpec(
@@ -207,10 +299,14 @@ def render_executor_catalog(executor_ids: tuple[str, ...]) -> str:
 __all__ = [
     "BENCHMARK_FALLBACK_EXECUTOR_ID",
     "HEAD_PATTERN_EXECUTOR_ID",
+    "HORIZON_ADAPTIVE_TREND_EXECUTOR_ID",
     "INVERSE_PATTERN_EXECUTOR_ID",
     "MOVING_AVERAGE_TREND_EXECUTOR_ID",
     "MULTI_ASSET_PORTFOLIO_EXECUTOR_ID",
     "RESISTANCE_BREAKOUT_EXECUTOR_ID",
+    "ROLLING_RESISTANCE_BREAKOUT_EXECUTOR_ID",
+    "ROLLING_SUPPORT_REACTION_EXECUTOR_ID",
+    "ROLLING_VOLUME_BREAKOUT_EXECUTOR_ID",
     "SUPPORT_REACTION_EXECUTOR_ID",
     "TECHNICAL_EXECUTOR_SPECS",
     "TECHNICAL_EXECUTOR_SPEC_BY_ID",

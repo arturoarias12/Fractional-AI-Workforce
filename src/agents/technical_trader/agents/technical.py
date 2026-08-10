@@ -74,6 +74,8 @@ class TechnicalTraderAgent(StagedTraderAgent):
             "inverse_head_and_shoulders_detection",
             "moving_average_analysis",
             "relative_volume_analysis",
+            "horizon_adaptive_screening",
+            "past_only_rolling_technical_recalculation",
             "deterministic_backtest_interpretation",
             "deterministic_benchmark_fallback_selection",
         )

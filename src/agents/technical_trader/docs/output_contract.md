@@ -47,7 +47,9 @@ The model-selectable package-level executor is
   parameters. Evidence-derived numeric values are bound by code from the cited
   IDs rather than transcribed by the model.
 - code-bound opportunity ID, rank, and score for every sleeve, proving that the
-  selection matched the mandate-specific frozen-evidence screen.
+  selection matched the mandate-specific training-evidence screen. Preferred
+  rolling executors then recompute their actionable signal from past bars at
+  each horizon-specific review rather than retaining a static level.
 
 Every sleeve is independently evidence-validated before the one portfolio
 backtest begins. The top-level evidence IDs must equal the union of all sleeve
@@ -72,14 +74,18 @@ assumptions. The model cannot select or author this fallback.
 - `constraint_assessment`: declared mappings and violations requiring Risk
   validation.
 - `additional_fields.technical_horizon`: resolved holding limit, permitted
-  lookbacks, actionability distance, evidence warm-up policy, and whether the
-  horizon came from the PM mandate or the conservative audited fallback.
-- `additional_fields.evaluation_semantics`: explicitly distinguishes the PM
-  holding horizon from the longer repeated-occurrence evaluation window.
+  lookbacks, review cadence, rolling-level policy, volatility-scaled risk
+  settings, actionability distance, evidence warm-up policy, and whether the
+  horizon came from the PM mandate or the disclosed balanced fallback.
+- `additional_fields.evaluation_semantics`: records the PM horizon, the
+  horizon-matched primary evaluation dates, and the remaining requirement for
+  an independent post-selection test.
 - `additional_fields.candidate_review`: records whether the second Technical
   review was applied and the before/after selected symbols.
 - `additional_fields.benchmark_selection`: records the exact Technical and
-  benchmark values, decision, and final fallback identity.
+  executable-benchmark values, identical-plan checks, decision, and final
+  fallback identity. The engine's convenience benchmark reference is retained
+  for audit but is not used for selection.
 - `additional_fields.technical_candidate_before_benchmark_fallback`: when the
   fallback is used, preserves the rejected Technical candidate, request,
   result, and ledger for audit.
@@ -90,13 +96,13 @@ package marks independent post-selection validation as still required. It must
 not be described as an untouched second out-of-sample test.
 
 The current policy also requires the requested Backtest Plan window to exactly
-equal the validation split. This prevents comparing held-out Technical metrics
-with benchmark metrics calculated over a different period. When fallback is
-used, `additional_fields.benchmark_selection.tracking_disclosure` records that
-the shared benchmark reference enters on its first resolved bar while the
-executable fallback obeys the plan's signal delay. It records both returns and
-their difference rather than presenting ordinary execution lag as unexplained
-underperformance.
+equal the validation split, and it rejects a split whose calendar span is
+plainly incompatible with the mandate horizon. Exact exchange-session counting
+belongs to the injected shared policy. The gate backtests the benchmark through
+the registered executable fallback under the Technical request's identical
+dates, costs, signal delay, fill rule, constraints, data references, and
+execution context. This prevents both cross-period and unequal-execution
+comparisons.
 
 ## Status and resilience
 

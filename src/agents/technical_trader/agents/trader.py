@@ -38,14 +38,18 @@ from ..errors import (
     AgentOutputValidationError,
     ServiceContractError,
 )
-from ..benchmark import BenchmarkComparison, BenchmarkSelectionPolicy
+from ..benchmark import BenchmarkSelectionPolicy
 from ..executors import (
     BENCHMARK_FALLBACK_EXECUTOR_ID,
     HEAD_PATTERN_EXECUTOR_ID,
+    HORIZON_ADAPTIVE_TREND_EXECUTOR_ID,
     INVERSE_PATTERN_EXECUTOR_ID,
     MOVING_AVERAGE_TREND_EXECUTOR_ID,
     MULTI_ASSET_PORTFOLIO_EXECUTOR_ID,
     RESISTANCE_BREAKOUT_EXECUTOR_ID,
+    ROLLING_RESISTANCE_BREAKOUT_EXECUTOR_ID,
+    ROLLING_SUPPORT_REACTION_EXECUTOR_ID,
+    ROLLING_VOLUME_BREAKOUT_EXECUTOR_ID,
     SUPPORT_REACTION_EXECUTOR_ID,
     TECHNICAL_EXECUTOR_SPEC_BY_ID,
     TechnicalPortfolioParameters,
@@ -55,6 +59,7 @@ from ..execution import ExecutionPolicy
 from ..horizon import (
     resolve_technical_horizon,
     screen_horizon_opportunities,
+    validate_horizon_evaluation_window,
 )
 from ..model_client import MetricsSink, ModelClient, ModelRequestContext
 from ..models.technical_analysis import (
@@ -408,20 +413,86 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         technical_candidate_rule = candidate_rule
         technical_backtest_request = backtest_request
         technical_backtest_result = backtest_result
+        benchmark_candidate_rule = None
+        benchmark_backtest_request = None
+        benchmark_backtest_result = None
         try:
             self._validate_benchmark_comparison_window(
                 technical_backtest_request
             )
+            benchmark_symbol = str(
+                technical_backtest_request.plan.benchmark or ""
+            ).strip()
+            if not benchmark_symbol:
+                raise ServiceContractError(
+                    "Technical benchmark selection requires a benchmark symbol."
+                )
+            if BENCHMARK_FALLBACK_EXECUTOR_ID not in self._available_executors:
+                raise ServiceContractError(
+                    "A like-for-like Technical benchmark comparison requires "
+                    "the Backtest Engine to register the additive executor "
+                    f"'{BENCHMARK_FALLBACK_EXECUTOR_ID}'."
+                )
+            benchmark_candidate_rule, benchmark_backtest_request = (
+                self._build_benchmark_fallback(
+                    request=request,
+                    technical_analysis=technical_analysis,
+                    technical_backtest_request=technical_backtest_request,
+                    benchmark_symbol=benchmark_symbol,
+                )
+            )
+            self._validate_like_for_like_benchmark_requests(
+                technical_backtest_request,
+                benchmark_backtest_request,
+            )
+            async with asyncio.timeout(
+                self._execution_policy.backtest_timeout_seconds
+            ):
+                raw_benchmark_result = await self._backtest_engine.run(
+                    benchmark_backtest_request
+                )
+            benchmark_backtest_result = self._coerce_backtest_result(
+                raw_benchmark_result
+            )
+            self._validate_backtest_result(
+                benchmark_backtest_request,
+                benchmark_backtest_result,
+            )
+            if benchmark_backtest_result.status is not BacktestStatus.SUCCEEDED:
+                raise ServiceContractError(
+                    benchmark_backtest_result.failure_reason
+                    or "Executable benchmark backtest did not succeed."
+                )
             comparison = self._benchmark_selection_policy.compare(
                 result=technical_backtest_result,
-                benchmark_symbol=technical_backtest_request.plan.benchmark,
+                benchmark_symbol=benchmark_symbol,
+                executable_benchmark_result=benchmark_backtest_result,
+            )
+        except asyncio.CancelledError:
+            raise
+        except TimeoutError:
+            return self._failure_package(
+                request,
+                stage="executable_benchmark_backtest",
+                exc=ServiceContractError(
+                    "Executable benchmark backtest timed out after "
+                    f"{self._execution_policy.backtest_timeout_seconds:g} "
+                    "seconds."
+                ),
+                retryable=True,
+                data_request=data_request,
+                data_response=data_response,
+                technical_analysis=technical_analysis,
+                candidate_rule=technical_candidate_rule,
+                backtest_request=technical_backtest_request,
+                backtest_result=technical_backtest_result,
             )
         except Exception as exc:
             return self._failure_package(
                 request,
                 stage="benchmark_comparison",
                 exc=exc,
-                retryable=False,
+                retryable=True,
                 data_request=data_request,
                 data_response=data_response,
                 technical_analysis=technical_analysis,
@@ -430,11 +501,33 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                 backtest_result=technical_backtest_result,
             )
 
+        if (
+            benchmark_candidate_rule is None
+            or benchmark_backtest_request is None
+            or benchmark_backtest_result is None
+        ):
+            raise RuntimeError(
+                "Executable benchmark comparison lost its construction invariant."
+            )
+
+        horizon_profile = resolve_technical_horizon(request.mandate)
+        validation_split = technical_backtest_request.plan.validation_split
+        if validation_split is None:
+            raise RuntimeError(
+                "Benchmark comparison lost its validation-split invariant."
+            )
+        evaluation_window = validate_horizon_evaluation_window(
+            request.mandate,
+            test_start_date=validation_split.test_start_date,
+            test_end_date=validation_split.test_end_date,
+        )
+
         benchmark_selection = {
             "policy": {
                 "rule": (
                     "retain Technical only when its out-of-sample total "
-                    "return strictly exceeds the requested benchmark"
+                    "return strictly exceeds an executable benchmark "
+                    "backtested under the identical plan"
                 ),
                 "comparison": comparison.as_mapping(),
             },
@@ -450,6 +543,24 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                     technical_backtest_result.benchmark_metrics
                 ),
                 "warnings": list(technical_backtest_result.warnings),
+            },
+            "executable_benchmark": {
+                "candidate_id": benchmark_candidate_rule.candidate_id,
+                "executor_id": benchmark_candidate_rule.executor_id,
+                "result_id": benchmark_backtest_result.result_id,
+                "metrics": dict(benchmark_backtest_result.metrics),
+                "out_of_sample_metrics": dict(
+                    benchmark_backtest_result.out_of_sample_metrics
+                ),
+                "warnings": list(benchmark_backtest_result.warnings),
+            },
+            "shared_engine_benchmark_reference": {
+                "used_for_selection": False,
+                "metrics": dict(technical_backtest_result.benchmark_metrics),
+                "reason": (
+                    "The engine reference may use different entry timing; "
+                    "selection uses the separately executed benchmark instead."
+                ),
             },
             "fallback_applied": False,
             "comparison_window": {
@@ -470,151 +581,39 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                     if technical_backtest_request.plan.validation_split
                     else None
                 ),
-                "windows_coincide": True,
+                "benchmark_requested_start_date": (
+                    benchmark_backtest_request.plan.requested_start_date
+                ),
+                "benchmark_requested_end_date": (
+                    benchmark_backtest_request.plan.requested_end_date
+                    or benchmark_backtest_request.as_of_date
+                ),
+                "technical_and_benchmark_windows_coincide": True,
+                **evaluation_window.as_mapping(),
+            },
+            "comparison_execution": {
+                "plans_are_identical": True,
+                "transaction_cost_assumptions_are_identical": True,
+                "execution_context_is_identical": True,
+                "data_references_are_identical": True,
+                "technical_plan": technical_backtest_request.plan.model_dump(
+                    mode="json"
+                ),
+                "benchmark_plan": benchmark_backtest_request.plan.model_dump(
+                    mode="json"
+                ),
             },
             "selection_uses_evaluation_window": True,
             "independent_post_selection_test_required": True,
         }
 
         if comparison.fallback_required:
-            if (
-                BENCHMARK_FALLBACK_EXECUTOR_ID
-                not in self._available_executors
-            ):
-                return self._failure_package(
-                    request,
-                    stage="benchmark_fallback",
-                    exc=ServiceContractError(
-                        "The Technical portfolio did not beat its benchmark, "
-                        "but the Backtest Engine has not registered the "
-                        f"required fallback executor "
-                        f"'{BENCHMARK_FALLBACK_EXECUTOR_ID}'."
-                    ),
-                    retryable=False,
-                    data_request=data_request,
-                    data_response=data_response,
-                    technical_analysis=technical_analysis,
-                    candidate_rule=technical_candidate_rule,
-                    backtest_request=technical_backtest_request,
-                    backtest_result=technical_backtest_result,
-                )
-            try:
-                candidate_rule, backtest_request = (
-                    self._build_benchmark_fallback(
-                        request=request,
-                        technical_analysis=technical_analysis,
-                        technical_backtest_request=(
-                            technical_backtest_request
-                        ),
-                        comparison=comparison,
-                    )
-                )
-                async with asyncio.timeout(
-                    self._execution_policy.backtest_timeout_seconds
-                ):
-                    raw_backtest_result = await self._backtest_engine.run(
-                        backtest_request
-                    )
-                backtest_result = self._coerce_backtest_result(
-                    raw_backtest_result
-                )
-                self._validate_backtest_result(
-                    backtest_request,
-                    backtest_result,
-                )
-                if backtest_result.status is not BacktestStatus.SUCCEEDED:
-                    raise ServiceContractError(
-                        backtest_result.failure_reason
-                        or "Benchmark fallback backtest did not succeed."
-                    )
-            except asyncio.CancelledError:
-                raise
-            except TimeoutError:
-                return self._failure_package(
-                    request,
-                    stage="benchmark_fallback_backtest",
-                    exc=ServiceContractError(
-                        "Benchmark fallback backtest timed out after "
-                        f"{self._execution_policy.backtest_timeout_seconds:g} "
-                        "seconds."
-                    ),
-                    retryable=True,
-                    data_request=data_request,
-                    data_response=data_response,
-                    technical_analysis=technical_analysis,
-                    candidate_rule=candidate_rule,
-                    backtest_request=backtest_request,
-                )
-            except Exception as exc:
-                return self._failure_package(
-                    request,
-                    stage="benchmark_fallback_backtest",
-                    exc=exc,
-                    retryable=True,
-                    data_request=data_request,
-                    data_response=data_response,
-                    technical_analysis=technical_analysis,
-                    candidate_rule=candidate_rule,
-                    backtest_request=backtest_request,
-                    backtest_result=backtest_result,
-                )
-            fallback_metric_section = (
-                backtest_result.out_of_sample_metrics
-                if comparison.metric_name
-                in backtest_result.out_of_sample_metrics
-                else backtest_result.metrics
-            )
-            raw_fallback_value = fallback_metric_section.get(
-                comparison.metric_name
-            )
-            fallback_value = (
-                float(raw_fallback_value)
-                if not isinstance(raw_fallback_value, bool)
-                and isinstance(raw_fallback_value, (int, float))
-                and math.isfinite(float(raw_fallback_value))
-                else None
-            )
-            signal_delay_bars = (
-                backtest_request.plan.transaction_cost_assumptions.get(
-                    "signal_delay_bars", 1
-                )
-            )
+            candidate_rule = benchmark_candidate_rule
+            backtest_request = benchmark_backtest_request
+            backtest_result = benchmark_backtest_result
             benchmark_selection.update(
                 {
                     "fallback_applied": True,
-                    "tracking_disclosure": {
-                        "benchmark_reference_entry_basis": (
-                            "T+0: the shared engine benchmark reference buys "
-                            "on the first resolved bar"
-                        ),
-                        "fallback_entry_basis": (
-                            "The executable fallback submits on the first bar "
-                            "and fills after the plan's ordinary signal delay"
-                        ),
-                        "signal_delay_bars": signal_delay_bars,
-                        "metric_name": comparison.metric_name,
-                        "benchmark_reference_value": (
-                            comparison.benchmark_value
-                        ),
-                        "fallback_backtest_value": fallback_value,
-                        "fallback_metric_section": (
-                            "out_of_sample_metrics"
-                            if fallback_metric_section
-                            is backtest_result.out_of_sample_metrics
-                            else "metrics"
-                        ),
-                        "tracking_difference": (
-                            fallback_value - comparison.benchmark_value
-                            if fallback_value is not None
-                            else None
-                        ),
-                        "interpretation": (
-                            "A nonzero tracking difference is expected when "
-                            "the configured signal delay is nonzero; changing "
-                            "the shared benchmark reference is outside the "
-                            "Technical Trader boundary."
-                        ),
-                    },
                     "final_candidate": {
                         "candidate_id": candidate_rule.candidate_id,
                         "executor_id": candidate_rule.executor_id,
@@ -746,11 +745,15 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                     "holding_horizon_trading_days": (
                         horizon_profile.horizon_trading_days
                     ),
-                    "historical_window_role": (
-                        "repeated out-of-sample occurrences across regimes"
+                    "primary_evaluation_window_role": (
+                        "horizon-matched held-out performance comparison"
                     ),
-                    "historical_window_is_not_holding_period": True,
-                    "benchmark_gate_uses_historical_window": True,
+                    "primary_evaluation_window": (
+                        evaluation_window.as_mapping()
+                    ),
+                    "technical_and_benchmark_use_identical_plan": True,
+                    "benchmark_gate_uses_executable_benchmark": True,
+                    "shared_engine_reference_used_for_selection": False,
                     "post_selection_independent_test_required": True,
                 },
             },
@@ -832,6 +835,14 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                 plan=proposal.backtest_plan,
                 data_response=data_response,
             )
+            try:
+                validate_horizon_evaluation_window(
+                    request.mandate,
+                    test_start_date=validation_split.test_start_date,
+                    test_end_date=validation_split.test_end_date,
+                )
+            except ValueError as exc:
+                raise ServiceContractError(str(exc)) from exc
         plan = BacktestPlan.from_draft(
             proposal.backtest_plan,
             validation_split=validation_split,
@@ -858,9 +869,13 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         request: TraderTask,
         technical_analysis: TechnicalAnalysisReport,
         technical_backtest_request: BacktestRequest,
-        comparison: BenchmarkComparison,
+        benchmark_symbol: str,
     ) -> tuple[CandidateRuleSpecification, BacktestRequest]:
-        benchmark = comparison.benchmark_symbol
+        benchmark = benchmark_symbol.strip()
+        if not benchmark:
+            raise ServiceContractError(
+                "Technical benchmark selection requires a benchmark symbol."
+            )
         permitted = request.mandate.permitted_asset_universe
         if isinstance(permitted, list) and benchmark.casefold() not in {
             symbol.casefold() for symbol in permitted
@@ -913,10 +928,9 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             lineage=candidate_lineage,
             strategy_name=f"{benchmark} benchmark fallback",
             hypothesis=(
-                "When the reviewed Technical portfolio does not strictly "
-                "outperform its requested benchmark under the deterministic "
-                "selection gate, tracking that benchmark is the stronger "
-                "prototype fallback for this evaluation."
+                "An executable benchmark portfolio provides a like-for-like "
+                "baseline for the reviewed Technical portfolio under the "
+                "same evaluation and execution assumptions."
             ),
             rule_summary=(
                 f"Establish one long-only {benchmark} target and hold it until "
@@ -953,7 +967,7 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             specialty_evidence_usage={
                 report_id: (
                     "Identifies the frozen Technical report that produced the "
-                    "portfolio rejected by the benchmark gate; it is audit "
+                    "portfolio evaluated by the benchmark gate; it is audit "
                     "lineage, not a benchmark entry signal."
                 )
             },
@@ -966,8 +980,9 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                 "outside prohibited assets.",
             ],
             implementation_notes=[
-                "This code-owned baseline is selected only after the Technical "
-                "candidate fails the deterministic benchmark gate.",
+                "This code-owned baseline is evaluated before the deterministic "
+                "selection gate and becomes final only if Technical does not "
+                "strictly outperform it.",
                 "The fallback is not a new Technical signal and does not add "
                 "fundamental or Quant analysis.",
                 "The fallback is backtested again through the registered "
@@ -991,11 +1006,10 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             data_references=list(technical_backtest_request.data_references),
             mandate_constraints=self._mandate_constraints(request),
             additional_fields={
-                "benchmark_fallback": True,
+                "executable_benchmark_comparison": True,
                 "technical_candidate_id": (
                     technical_backtest_request.candidate_id
                 ),
-                "selection_comparison": comparison.as_mapping(),
             },
         )
         return candidate, fallback_request
@@ -1019,6 +1033,29 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         raw_sleeves = portfolio_parameters.get("sleeves")
         if not isinstance(raw_sleeves, list):
             return proposal
+        horizon = technical_analysis.horizon_context
+        if horizon is None:
+            raise AgentOutputValidationError(
+                "Technical horizon context is required before evidence binding."
+            )
+        raw_common_risk = portfolio_parameters.get("common_risk_parameters")
+        if not isinstance(raw_common_risk, Mapping):
+            raise AgentOutputValidationError(
+                "Portfolio common_risk_parameters must be a mapping."
+            )
+        bound_common_risk = dict(raw_common_risk)
+        bound_common_risk.update(
+            {
+                "max_holding_bars": horizon.maximum_holding_bars,
+                "volatility_lookback_bars": horizon.volatility_lookback_bars,
+                "profit_target_sigma_multiple": (
+                    horizon.profit_target_sigma_multiple
+                ),
+                "stop_loss_sigma_multiple": (
+                    horizon.stop_loss_sigma_multiple
+                ),
+            }
+        )
 
         reliable_levels = technical_analysis.reliable_level_ids()
         level_by_id = {
@@ -1101,7 +1138,10 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             }
             family_parameters = dict(raw_family_parameters)
 
-            if executor_id == SUPPORT_REACTION_EXECUTOR_ID:
+            if executor_id in {
+                SUPPORT_REACTION_EXECUTOR_ID,
+                ROLLING_SUPPORT_REACTION_EXECUTOR_ID,
+            }:
                 level = one_matching_observation(
                     sleeve_number=sleeve_number,
                     symbol=symbol,
@@ -1113,10 +1153,13 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                         and observation.kind is PriceLevelKind.SUPPORT
                     ),
                 )
-                family_parameters["anchor_level"] = level.price
+                if executor_id == SUPPORT_REACTION_EXECUTOR_ID:
+                    family_parameters["anchor_level"] = level.price
             elif executor_id in {
                 RESISTANCE_BREAKOUT_EXECUTOR_ID,
                 VOLUME_BREAKOUT_EXECUTOR_ID,
+                ROLLING_RESISTANCE_BREAKOUT_EXECUTOR_ID,
+                ROLLING_VOLUME_BREAKOUT_EXECUTOR_ID,
             }:
                 level = one_matching_observation(
                     sleeve_number=sleeve_number,
@@ -1129,9 +1172,16 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                         and observation.kind is PriceLevelKind.RESISTANCE
                     ),
                 )
-                family_parameters["anchor_level"] = level.price
+                if executor_id in {
+                    RESISTANCE_BREAKOUT_EXECUTOR_ID,
+                    VOLUME_BREAKOUT_EXECUTOR_ID,
+                }:
+                    family_parameters["anchor_level"] = level.price
 
-            if executor_id == MOVING_AVERAGE_TREND_EXECUTOR_ID:
+            if executor_id in {
+                MOVING_AVERAGE_TREND_EXECUTOR_ID,
+                HORIZON_ADAPTIVE_TREND_EXECUTOR_ID,
+            }:
                 observation = one_matching_observation(
                     sleeve_number=sleeve_number,
                     symbol=symbol,
@@ -1141,7 +1191,10 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                 )
                 family_parameters["fast_window"] = observation.fast_window
                 family_parameters["slow_window"] = observation.slow_window
-            elif executor_id == VOLUME_BREAKOUT_EXECUTOR_ID:
+            elif executor_id in {
+                VOLUME_BREAKOUT_EXECUTOR_ID,
+                ROLLING_VOLUME_BREAKOUT_EXECUTOR_ID,
+            }:
                 observation = one_matching_observation(
                     sleeve_number=sleeve_number,
                     symbol=symbol,
@@ -1169,6 +1222,32 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                 )
                 family_parameters["neckline_price"] = pattern.neckline_price
 
+            if executor_id in {
+                ROLLING_SUPPORT_REACTION_EXECUTOR_ID,
+                ROLLING_RESISTANCE_BREAKOUT_EXECUTOR_ID,
+                ROLLING_VOLUME_BREAKOUT_EXECUTOR_ID,
+            }:
+                family_parameters.update(
+                    {
+                        "review_interval_bars": horizon.review_interval_bars,
+                        "rolling_level_lookback_bars": (
+                            horizon.rolling_level_lookback_bars
+                        ),
+                        "pivot_window": horizon.rolling_pivot_window,
+                        "merge_tolerance_percent": (
+                            horizon.rolling_merge_tolerance_percent
+                        ),
+                        "min_touches": horizon.rolling_min_touches,
+                        "maximum_level_distance_percent": (
+                            horizon.maximum_level_distance_percent
+                        ),
+                    }
+                )
+            elif executor_id == HORIZON_ADAPTIVE_TREND_EXECUTOR_ID:
+                family_parameters["review_interval_bars"] = (
+                    horizon.review_interval_bars
+                )
+
             matching_opportunities = [
                 opportunity
                 for opportunity in technical_analysis.horizon_opportunities
@@ -1191,6 +1270,9 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             bound_sleeves.append(bound_sleeve)
 
         bound_portfolio_parameters = dict(portfolio_parameters)
+        bound_portfolio_parameters["common_risk_parameters"] = (
+            bound_common_risk
+        )
         bound_portfolio_parameters["sleeves"] = bound_sleeves
         bound_rule = proposal.rule.model_copy(
             update={"parameters": bound_portfolio_parameters}
@@ -1255,6 +1337,23 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                     f"greater than the mandate horizon limit of "
                     f"{profile.maximum_holding_bars}."
                 )
+            expected_common_risk = {
+                "max_holding_bars": profile.maximum_holding_bars,
+                "volatility_lookback_bars": (
+                    profile.volatility_lookback_bars
+                ),
+                "profit_target_sigma_multiple": (
+                    profile.profit_target_sigma_multiple
+                ),
+                "stop_loss_sigma_multiple": (
+                    profile.stop_loss_sigma_multiple
+                ),
+            }
+            if dict(portfolio.common_risk_parameters) != expected_common_risk:
+                raise AgentOutputValidationError(
+                    "Portfolio common risk parameters must equal the "
+                    "code-owned horizon policy."
+                )
 
             moving_average_by_id = {
                 observation.moving_average_id: (asset.symbol, observation)
@@ -1268,7 +1367,47 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             }
             allowed_windows = set(profile.moving_average_windows)
             for sleeve in portfolio.sleeves:
-                if sleeve.executor_id == MOVING_AVERAGE_TREND_EXECUTOR_ID:
+                if sleeve.executor_id in {
+                    ROLLING_SUPPORT_REACTION_EXECUTOR_ID,
+                    ROLLING_RESISTANCE_BREAKOUT_EXECUTOR_ID,
+                    ROLLING_VOLUME_BREAKOUT_EXECUTOR_ID,
+                }:
+                    expected_rolling = {
+                        "review_interval_bars": profile.review_interval_bars,
+                        "rolling_level_lookback_bars": (
+                            profile.rolling_level_lookback_bars
+                        ),
+                        "pivot_window": profile.rolling_pivot_window,
+                        "merge_tolerance_percent": (
+                            profile.rolling_merge_tolerance_percent
+                        ),
+                        "min_touches": profile.rolling_min_touches,
+                        "maximum_level_distance_percent": (
+                            profile.maximum_level_distance_percent
+                        ),
+                    }
+                    if any(
+                        sleeve.family_parameters.get(key) != value
+                        for key, value in expected_rolling.items()
+                    ):
+                        raise AgentOutputValidationError(
+                            f"Rolling sleeve '{sleeve.symbol}' changed a "
+                            "code-owned horizon parameter."
+                        )
+                elif (
+                    sleeve.executor_id
+                    == HORIZON_ADAPTIVE_TREND_EXECUTOR_ID
+                    and sleeve.family_parameters.get("review_interval_bars")
+                    != profile.review_interval_bars
+                ):
+                    raise AgentOutputValidationError(
+                        f"Adaptive trend sleeve '{sleeve.symbol}' changed "
+                        "the code-owned review cadence."
+                    )
+                if sleeve.executor_id in {
+                    MOVING_AVERAGE_TREND_EXECUTOR_ID,
+                    HORIZON_ADAPTIVE_TREND_EXECUTOR_ID,
+                }:
                     windows = (
                         int(sleeve.family_parameters["fast_window"]),
                         int(sleeve.family_parameters["slow_window"]),
@@ -1296,24 +1435,37 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                             "observation."
                         )
                     observation = observations[0]
+                    requires_fresh_cross = (
+                        sleeve.executor_id
+                        == MOVING_AVERAGE_TREND_EXECUTOR_ID
+                    )
                     if (
                         observation.relationship
                         is not MovingAverageRelationship.BULLISH
-                        or observation.latest_cross_direction
-                        is not MovingAverageCrossDirection.BULLISH
-                        or observation.bars_since_latest_cross is None
-                        or observation.bars_since_latest_cross
-                        > profile.maximum_recent_cross_age_bars
+                        or (
+                            requires_fresh_cross
+                            and (
+                                observation.latest_cross_direction
+                                is not MovingAverageCrossDirection.BULLISH
+                                or observation.bars_since_latest_cross is None
+                                or observation.bars_since_latest_cross
+                                > profile.maximum_recent_cross_age_bars
+                            )
+                        )
                     ):
                         raise AgentOutputValidationError(
                             f"Moving-average sleeve '{sleeve.symbol}' must "
-                            "cite a currently bullish, recent bullish "
-                            "crossover aligned with the mandate horizon."
+                            "cite a currently bullish observation aligned "
+                            "with the mandate horizon; legacy crossover-only "
+                            "sleeves must also cite a recent bullish cross."
                         )
                 elif sleeve.executor_id in {
                     SUPPORT_REACTION_EXECUTOR_ID,
                     RESISTANCE_BREAKOUT_EXECUTOR_ID,
                     VOLUME_BREAKOUT_EXECUTOR_ID,
+                    ROLLING_SUPPORT_REACTION_EXECUTOR_ID,
+                    ROLLING_RESISTANCE_BREAKOUT_EXECUTOR_ID,
+                    ROLLING_VOLUME_BREAKOUT_EXECUTOR_ID,
                 }:
                     cited_levels = [
                         level
@@ -1849,8 +2001,39 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             raise ServiceContractError(
                 "The Technical benchmark gate currently requires the "
                 "requested Backtest Plan window to exactly equal the "
-                "code-owned validation split, because the shared engine "
-                "returns benchmark metrics for the requested window."
+                "injected shared validation split."
+            )
+
+    @staticmethod
+    def _validate_like_for_like_benchmark_requests(
+        technical_request: BacktestRequest,
+        benchmark_request: BacktestRequest,
+    ) -> None:
+        """Require every comparison input except the candidate to be equal."""
+
+        unequal_fields = []
+        if technical_request.plan != benchmark_request.plan:
+            unequal_fields.append("plan")
+        if (
+            technical_request.execution_context
+            != benchmark_request.execution_context
+        ):
+            unequal_fields.append("execution_context")
+        if technical_request.as_of_date != benchmark_request.as_of_date:
+            unequal_fields.append("as_of_date")
+        if technical_request.data_references != benchmark_request.data_references:
+            unequal_fields.append("data_references")
+        if (
+            technical_request.mandate_constraints
+            != benchmark_request.mandate_constraints
+        ):
+            unequal_fields.append("mandate_constraints")
+        if technical_request.trader_id is not benchmark_request.trader_id:
+            unequal_fields.append("trader_id")
+        if unequal_fields:
+            raise ServiceContractError(
+                "Technical and executable benchmark requests are not "
+                "like-for-like; unequal fields: " + ", ".join(unequal_fields)
             )
 
     @staticmethod

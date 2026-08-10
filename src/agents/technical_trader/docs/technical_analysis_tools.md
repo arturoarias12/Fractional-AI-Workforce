@@ -90,22 +90,23 @@ Code maps the PM mandate to permitted lookbacks. A five-day mandate, for
 example, permits 3/10 and 5/20 evidence and rejects 20/50. Longer mandates may
 use slower pairs without changing the agent or shared package contract.
 
-| PM horizon (trading days) | Permitted pairs | Maximum level distance |
-|---|---|---:|
-| 1–5 | 3/10, 5/20 | 3% |
-| 6–20 | 5/20, 10/30 | 5% |
-| 21–63 | 10/30, 20/50 | 8% |
-| 64–126 | 20/50, 50/100 | 12% |
-| 127–1,260 | 50/100, 50/200 | 20% |
+| PM horizon (trading days) | Permitted pairs | Review cadence | Rolling-level lookback | Maximum level distance |
+|---|---|---:|---:|---:|
+| 1–5 | 3/10, 5/20 | 1 bar | 63 bars | 3% |
+| 6–20 | 5/20, 10/30 | 1 bar | 126 bars | 5% |
+| 21–63 | 10/30, 20/50 | 5 bars | 252 bars | 8% |
+| 64–126 | 20/50, 50/100 | 10 bars | 378 bars | 12% |
+| 127+ | 50/100, 50/200 | 21 bars | 504–756 bars | 20% |
 
 The maximum holding period is the shorter of the PM horizon and any explicit
 holding cap in `risk_limits`. The analytical profile and permitted lookbacks
 continue to follow the PM investment horizon; a tighter risk cap limits time in
 the position but does not silently rewrite the analytical thesis. Numeric day/
 week/month/year mappings, value/unit mappings, and equivalent plain-language
-descriptions are accepted. An absent or unparseable horizon conservatively
-defaults to five trading days and produces an audit warning. The resolved
-profile and its source are stored in the final package.
+descriptions are accepted. An absent or unparseable horizon uses a disclosed
+balanced 63-trading-day profile with 5/20, 20/50, and 50/200 evidence rather
+than pretending the PM supplied a horizon. The resolved profile, source, and
+warning are stored in the final package.
 
 ## Relative volume
 
@@ -117,13 +118,23 @@ produces a warning and no volume observation; it is never imputed by the LLM.
 ## Deterministic strategy executors
 
 `src/agents/technical_trader/executors` contains one model-selectable multi-ETF
-portfolio executor. It composes five deterministic long-only sleeve families:
+portfolio executor. Its preferred horizon-adaptive implementation composes
+five deterministic long-only sleeve families:
 
-- support reaction;
-- resistance breakout;
-- fast/slow moving-average trend;
-- volume-confirmed resistance breakout;
+- rolling support reaction;
+- rolling resistance breakout;
+- horizon-adaptive fast/slow moving-average trend;
+- rolling volume-confirmed resistance breakout;
 - confirmed inverse-head-and-shoulders breakout.
+
+The fixed-anchor and fresh-crossover executors remain registered for backward
+compatibility. New proposals are directed to the rolling variants. Rolling
+level executors reconstruct repeated-pivot clusters from completed past bars
+only at the horizon-specific review cadence. The adaptive trend executor
+recomputes its permitted moving averages from the information available at
+each signal timestamp and may enter a prevailing bullish trend instead of
+waiting for a new crossover after the evaluation boundary. Exits and risk
+checks remain deterministic and are evaluated on every available bar.
 
 The bearish head-and-shoulders breakdown implementation remains available as
 agent-local analytical code but is not registered in the current long-only
@@ -165,11 +176,15 @@ training evidence, and the exact evidence IDs required by that family.
 
 Before the candidate call, code converts the PM's flexible horizon into an
 auditable profile containing the holding limit, permitted moving-average pairs,
-recent-crossover age, level-actionability distance, and minimum warm-up sample.
-It then ranks family-specific opportunities from frozen training evidence. The
-score combines only ex-ante properties relevant to the family: proximity,
+review cadence, rolling-level and volatility lookbacks, volatility-scaled exit
+thresholds, level-actionability distance, family preferences, and minimum
+warm-up sample. It then ranks family-specific opportunities from frozen
+training evidence. This initial evidence determines which symbols and families
+are eligible; it is not reused as a static execution anchor by rolling sleeves.
+The score combines only ex-ante properties relevant to the family: proximity,
 repeated-touch quality, recency, volatility-scaled trend strength, relative
-volume when available, and capped daily movement capacity. The last component
+volume when available, capped daily movement capacity, and a bounded horizon-
+family fit. The last movement component
 penalizes very low-volatility assets but caps at 1% daily volatility, so it does
 not award additional points for leverage-like volatility. The score is a
 deterministic selection aid, not a return forecast.
@@ -180,11 +195,14 @@ package. This makes ties and deviations auditable while leaving the LLM free to
 choose a lower-ranked opportunity for a stated evidence-based diversification
 reason.
 
-Evidence IDs are authoritative for deterministic numeric inputs. Before
-validation and execution, code resolves the cited support/resistance price,
-moving-average windows, volume lookback, or confirmed pattern neckline and
-binds it into the sleeve parameters. The LLM chooses the evidence but does not
-retype or estimate those values.
+Evidence IDs are authoritative for deterministic inputs. Before validation and
+execution, code resolves the cited family eligibility, moving-average windows,
+volume lookback, or confirmed pattern neckline and binds it into the sleeve
+parameters. It also binds the horizon-specific review cadence, rolling
+lookbacks, holding limit, and volatility-scaled risk settings. The LLM chooses
+eligible evidence and limited strategy buffers but does not retype or estimate
+code-owned values. Legacy fixed-level sleeves still bind their cited level;
+rolling sleeves calculate their live anchor from past bars at each review.
 
 The executor equal-weights the selected sleeves within the declared portfolio
 gross target. Each sleeve independently decides when to enter and exit; inactive
@@ -226,7 +244,8 @@ to its exact rule role in `specialty_evidence_usage`. Code rejects:
 - asset-level evidence that belongs to a different symbol;
 - missing executor-required evidence;
 - evidence that does not match one ranked mandate-horizon opportunity;
-- moving-average windows or crossover recency inconsistent with the mandate;
+- moving-average windows or trend/crossover state inconsistent with the
+  selected executor and mandate;
 - levels too far from price for the mandate horizon;
 - fallback or wrong-side levels;
 - ambiguous or missing evidence needed to bind a level price, moving-average
@@ -243,7 +262,8 @@ to its exact rule role in `specialty_evidence_usage`. Code rejects:
 - Adjustment methodology affects historical prices.
 - Pattern detection does not model execution, liquidity, or transaction costs.
 - Parameter selection can introduce multiple-testing and selection bias.
-- Opportunity scores are heuristic evidence rankings, not expected-return
-  estimates and not guarantees of better held-out performance.
+- Opportunity scores and horizon-family weights are heuristic evidence
+  rankings, not expected-return estimates and not guarantees of better held-
+  out performance.
 - Every strategy still requires deterministic backtesting and independent Risk
   review.

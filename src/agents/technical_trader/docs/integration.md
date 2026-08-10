@@ -103,10 +103,13 @@ The request contains:
 - PM mandate constraints.
 
 The selected rule carries a mandate-derived maximum holding period and cites
-only opportunities that passed the Technical horizon screen. The historical
-validation window may be much longer: it measures repeated occurrences of the
-same horizon-length decision and must not be interpreted as the strategy's
-holding horizon. No new Backtest Engine request field is required.
+only opportunities that passed the Technical horizon screen. The primary
+validation window must contain the mandate horizon's number of trading
+sessions: for example, a 504-trading-day mandate requires a 504-session primary
+holdout. Individual positions may enter, exit, and re-enter inside that window.
+The injected shared policy owns exact exchange-session resolution; the
+Technical Trader rejects a date span that is plainly incompatible with the PM
+horizon. No new Backtest Engine request field is required.
 
 The engine must return
 `computed_by="deterministic_backtest_engine"`. The Technical Trader rejects
@@ -136,28 +139,31 @@ For the complete current Technical path, register both the model-selectable
 `technical.multi_asset_portfolio.v1` executor and the code-owned
 `technical.benchmark_buy_and_hold_fallback.v1` executor. The latter is hidden
 from proposal prompts. If the reviewed Technical candidate does not strictly
-beat the requested benchmark's out-of-sample `total_return`, the agent builds
-that fallback itself and asks the engine to evaluate it under the same plan.
+beat an executable benchmark's out-of-sample `total_return`, that benchmark
+becomes the fallback. The agent builds and evaluates the baseline under the
+same plan before applying the gate.
 An engine that has not yet registered the additive fallback executor receives
-no changed protocol or method call, but that underperforming run settles as
-partial instead of silently returning a weaker strategy.
+no changed protocol or method call, but the Technical run settles as partial
+because a like-for-like comparison cannot be completed.
 
-The gate currently requires the requested plan window and validation split to
-coincide because the shared engine reports benchmark metrics for the complete
-requested window. A mismatch settles the Technical run as partial instead of
-performing an invalid cross-period comparison. The shared engine's benchmark
-reference enters at its first bar, while the executable fallback observes the
-plan's ordinary signal delay. The agent records the resulting tracking
-difference explicitly; it does not alter shared execution or benchmark
-semantics.
+The gate requires the requested plan window and validation split to coincide.
+It always runs the executable benchmark before selection and compares the two
+out-of-sample results. The Technical and benchmark requests must have identical
+dates, transaction costs, signal delay, fill-price rule, constraints, data
+references, and execution context. The shared engine's convenience benchmark
+reference remains available for audit but is not used by the gate because its
+entry timing may differ. A mismatch settles the Technical run as partial
+instead of performing a cross-period or unequal-assumption comparison.
 
 An unknown executor is rejected before the engine runs. If no registered
 executor exactly implements the proposed logic, the run settles as partial;
 the system must not backtest a merely similar strategy.
 
 `validation_split_policy` is intentionally injected. The Technical Trader does
-not define the team's train/test ratio or dates, allowing all three traders to
-use the same evaluation policy.
+not choose calendar dates, allowing all three traders to use the same policy.
+That shared policy must resolve exactly the mandate horizon's number of market
+sessions. The agent performs a calendar-span boundary check; the policy and
+Data Service remain responsible for exact exchange-calendar counting.
 
 Backtest Engine integration details still to confirm:
 

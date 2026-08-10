@@ -34,10 +34,11 @@ class BacktestEngine(Protocol):
 
 @runtime_checkable
 class ValidationSplitPolicy(Protocol):
-    """Supply the shared fixed held-out window to a trader.
+    """Supply the shared horizon-matched held-out window to a trader.
 
     This boundary deliberately contains no Technical Trader default. The same
-    policy can be injected into Technical, Fundamental, and Quant traders.
+    policy can be injected into Technical, Fundamental, and Quant traders. Its
+    market calendar must resolve exactly the PM horizon's number of sessions.
     """
 
     def resolve(
@@ -47,4 +48,4 @@ class ValidationSplitPolicy(Protocol):
         plan: BacktestPlanDraft,
         data_response: DataResponse,
     ) -> ValidationSplit:
-        """Return a deterministic window ending no later than ``as_of_date``."""
+        """Return an exact horizon-sized window no later than ``as_of_date``."""

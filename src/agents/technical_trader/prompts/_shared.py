@@ -110,10 +110,13 @@ Compare instruments as potential sleeves. Do not reward an asset merely
 because it has more detected levels. Raw touch counts are not directly
 comparable across different histories and volatility regimes; interpret them
 with observation_count and annualized_volatility from the deterministic report.
-Use only signals permitted by the code-owned horizon policy. A moving-average
-sleeve enters on a fresh bullish crossover during evaluation; a static bullish
-relationship at the training cutoff is evidence for eligibility, not an entry
-instruction. When deterministic opportunity ranks are supplied, treat rank
+Use only signals permitted by the code-owned horizon policy. The preferred
+horizon-adaptive trend sleeve may enter a prevailing bullish relationship at a
+scheduled review, while its legacy crossover-only counterpart still requires a
+fresh bullish crossover. Training-cutoff evidence establishes family
+eligibility; rolling executors recompute their actual signal from past bars at
+each code-owned review. When deterministic opportunity ranks are supplied,
+treat rank
 only as a reproducible tie-breaker, not as an instruction to copy the first
 unique symbols. Compare available Technical families, signal recency, evidence
 quality, conflicting observations, likely whipsaw or false-breakout exposure,

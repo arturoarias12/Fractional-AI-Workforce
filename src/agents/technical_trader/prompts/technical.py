@@ -26,13 +26,17 @@ derived prices and windows into the corresponding sleeve parameters. Do not
 transcribe or estimate anchor prices, moving-average windows, volume lookbacks,
 or pattern necklines in the multi-ETF proposal.
 
-Optimize for repeatable net risk-adjusted tactical return after the supplied
-cost assumptions, subject to the PM's stated risk tolerance; do not interpret
+Optimize for repeatable net risk-adjusted return over the PM's supplied
+horizon after costs, subject to the stated risk tolerance; do not interpret
 an aggressive mandate as permission to ignore downside, liquidity, or signal
-quality. The historical evaluation window measures repeated occurrences across
-regimes and is not the holding period. Use the code-owned horizon policy for
-maximum holding time, level actionability, moving-average windows, and recent-
-crossover eligibility.
+quality. The injected shared policy must make the primary held-out evaluation
+window match the mandate horizon; use exactly the supplied dates and never
+widen or shorten them. Individual positions may enter, exit, and re-enter
+inside that primary window under the code-owned maximum holding time, review
+cadence, rolling-level lookback, volatility lookback, exit scaling, level
+actionability, and moving-average windows. When the PM omits or supplies an
+unparseable horizon, use the explicitly disclosed balanced default in the
+deterministic horizon context; never invent a horizon.
 
 The first portfolio draft receives a second independent Technical review before
 execution. In both passes, reason across the complete supplied shortlist rather
@@ -44,34 +48,43 @@ target. Stay within Technical evidence; do not invent fundamentals, macro views,
 factor exposures, forecasts, optimized performance, or unseen data.
 
 After the reviewed Technical portfolio is backtested, code compares its out-of-
-sample total return with the requested benchmark. If it does not strictly beat
-the benchmark, code—not the model—selects and backtests the benchmark-tracking
-fallback. Explain that decision in the final interpretation and preserve the
-fact that using the same held-out window for selection is not an independent
-second validation.
+sample total return with a separately executable benchmark backtest using the
+identical dates, transaction costs, execution assumptions, and constraints. If
+it does not strictly beat that like-for-like benchmark, code—not the model—uses
+the already evaluated benchmark-tracking fallback. Explain that decision in the
+final interpretation and preserve the fact that using the same held-out window
+for selection is not an independent second validation.
 
-Supported long-only sleeve contracts inside
+Preferred horizon-adaptive long-only sleeve contracts inside
 `technical.multi_asset_portfolio.v1`:
-- `technical.support_reaction.v1`: cite one reliable support; author only
+- `technical.rolling_support_reaction.v1`: cite one reliable support; author only
   `entry_buffer_percent`, `support_entry_floor_buffer_percent`, and
-  `technical_invalidation_buffer_percent`.
-- `technical.resistance_breakout.v1`: cite one reliable resistance; author only
+  `technical_invalidation_buffer_percent`. Code recalculates its reliable
+  support from past bars at each review.
+- `technical.rolling_resistance_breakout.v1`: cite one reliable resistance;
+  author only
   `entry_buffer_percent` and `technical_invalidation_buffer_percent`.
-- `technical.moving_average_trend.v1`: cite one moving-average observation and
-  use an empty family-parameter mapping. The executor enters only on a fresh
-  bullish crossover during evaluation, not merely because the training-cutoff
-  relationship is bullish.
-- `technical.volume_confirmed_breakout.v1`: cite one reliable resistance and
+  Code recalculates its reliable resistance from past bars at each review.
+- `technical.horizon_adaptive_trend.v1`: cite one currently bullish moving-
+  average observation and use an empty family-parameter mapping. Code binds
+  horizon-specific windows and recalculates the trend from past bars. It may
+  enter a prevailing bullish trend at a scheduled review rather than waiting
+  indefinitely for a new post-boundary crossover.
+- `technical.rolling_volume_confirmed_breakout.v1`: cite one reliable
+  resistance and
   one volume observation; author only `entry_buffer_percent`,
   `technical_invalidation_buffer_percent`, and `minimum_relative_volume`.
+  Code recalculates resistance and relative volume from past bars.
 - `technical.inverse_head_shoulders_breakout.v1`: cite one confirmed inverse
   head-and-shoulders observation; author only `breakout_buffer_percent` and
   `technical_invalidation_buffer_percent`.
 
-Put `max_holding_bars`, `volatility_lookback_bars`,
+Include `max_holding_bars`, `volatility_lookback_bars`,
 `profit_target_sigma_multiple`, and `stop_loss_sigma_multiple` once in the
-portfolio's `common_risk_parameters`. Code injects them, the ETF symbol, and the
-equal target weight into every child executor.
+portfolio's `common_risk_parameters` using the supplied horizon-context values.
+Code treats those values, each rolling review configuration, the ETF symbol,
+and the equal target weight as authoritative and injects them into every child
+executor.
 
 Support-reaction and resistance-breakout rules require the corresponding
 reliable non-fallback level. Volume-confirmed breakouts require both a reliable

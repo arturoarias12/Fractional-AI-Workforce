@@ -32,15 +32,15 @@ def positive_integer(
     name: str,
     *,
     minimum: int = 1,
-    maximum: int,
+    maximum: int | None = None,
 ) -> int:
     raw = values.get(name)
     if isinstance(raw, bool) or not isinstance(raw, int):
         raise ValueError(f"{name} must be an integer.")
-    if not minimum <= raw <= maximum:
-        raise ValueError(
-            f"{name} must be from {minimum} through {maximum}."
-        )
+    if raw < minimum:
+        raise ValueError(f"{name} must be at least {minimum}.")
+    if maximum is not None and raw > maximum:
+        raise ValueError(f"{name} must be at most {maximum}.")
     return raw
 
 
@@ -68,7 +68,7 @@ class RiskManagedParameters:
                 values, "target_weight", minimum=0.01, maximum=1.0
             ),
             max_holding_bars=positive_integer(
-                values, "max_holding_bars", maximum=252
+                values, "max_holding_bars"
             ),
             volatility_lookback_bars=positive_integer(
                 values,

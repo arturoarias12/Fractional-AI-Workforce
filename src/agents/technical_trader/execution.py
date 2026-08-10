@@ -6,11 +6,14 @@ from dataclasses import dataclass
 from math import isfinite
 
 
+# Individual provider/service calls remain bounded independently from the
+# complete orchestration deadline.
 MAX_TIMEOUT_SECONDS = 300.0
+MAX_TRADER_TIMEOUT_SECONDS = 400.0
 DEFAULT_MODEL_CALL_TIMEOUT_SECONDS = 45.0
 DEFAULT_DATA_SERVICE_TIMEOUT_SECONDS = 30.0
 DEFAULT_BACKTEST_TIMEOUT_SECONDS = 40.0
-DEFAULT_TRADER_TIMEOUT_SECONDS = MAX_TIMEOUT_SECONDS
+DEFAULT_TRADER_TIMEOUT_SECONDS = MAX_TRADER_TIMEOUT_SECONDS
 EXPECTED_MODEL_CALLS_PER_TRADER_RUN = 4
 EXPECTED_BACKTEST_CALLS_PER_TRADER_RUN = 2
 
@@ -33,7 +36,6 @@ class ExecutionPolicy:
             "model_call_timeout_seconds",
             "data_service_timeout_seconds",
             "backtest_timeout_seconds",
-            "trader_timeout_seconds",
         ):
             value = getattr(self, field_name)
             if (
@@ -48,6 +50,22 @@ class ExecutionPolicy:
                     f"{field_name} cannot exceed "
                     f"{MAX_TIMEOUT_SECONDS:g} seconds."
                 )
+
+        trader_timeout = self.trader_timeout_seconds
+        if (
+            isinstance(trader_timeout, bool)
+            or not isinstance(trader_timeout, (int, float))
+            or not isfinite(trader_timeout)
+            or trader_timeout <= 0
+        ):
+            raise ValueError(
+                "trader_timeout_seconds must be a positive number."
+            )
+        if trader_timeout > MAX_TRADER_TIMEOUT_SECONDS:
+            raise ValueError(
+                "trader_timeout_seconds cannot exceed "
+                f"{MAX_TRADER_TIMEOUT_SECONDS:g} seconds."
+            )
 
         if self.model_call_timeout_seconds >= self.trader_timeout_seconds:
             raise ValueError(

@@ -21,6 +21,9 @@ class BenchmarkComparison:
     technical_outperformed: bool
     fallback_required: bool
     technical_metric_section: str
+    benchmark_metric_section: str = "benchmark_metrics"
+    benchmark_result_id: str | None = None
+    comparison_basis: str = "shared_engine_benchmark_reference"
 
     def as_mapping(self) -> dict[str, Any]:
         return asdict(self)
@@ -56,6 +59,7 @@ class BenchmarkSelectionPolicy:
         *,
         result: BacktestResult,
         benchmark_symbol: str | None,
+        executable_benchmark_result: BacktestResult | None = None,
     ) -> BenchmarkComparison:
         symbol = str(benchmark_symbol or "").strip()
         if not symbol:
@@ -79,10 +83,25 @@ class BenchmarkSelectionPolicy:
             technical_section,
             label=f"Technical {section_name}",
         )
-        benchmark_value = self._metric(
-            result.benchmark_metrics,
-            label="benchmark_metrics",
-        )
+        benchmark_result_id: str | None = None
+        if executable_benchmark_result is not None:
+            benchmark_section, benchmark_section_name = self._result_section(
+                executable_benchmark_result,
+                label="Executable benchmark",
+            )
+            benchmark_value = self._metric(
+                benchmark_section,
+                label=f"Executable benchmark {benchmark_section_name}",
+            )
+            benchmark_result_id = executable_benchmark_result.result_id
+            comparison_basis = "executable_benchmark_backtest"
+        else:
+            benchmark_section_name = "benchmark_metrics"
+            benchmark_value = self._metric(
+                result.benchmark_metrics,
+                label="benchmark_metrics",
+            )
+            comparison_basis = "shared_engine_benchmark_reference"
         outperformed = (
             technical_value
             > benchmark_value + float(self.minimum_excess_return)
@@ -96,7 +115,24 @@ class BenchmarkSelectionPolicy:
             technical_outperformed=outperformed,
             fallback_required=not outperformed,
             technical_metric_section=section_name,
+            benchmark_metric_section=benchmark_section_name,
+            benchmark_result_id=benchmark_result_id,
+            comparison_basis=comparison_basis,
         )
+
+    def _result_section(
+        self,
+        result: BacktestResult,
+        *,
+        label: str,
+    ) -> tuple[Mapping[str, float | int | None], str]:
+        if result.out_of_sample_metrics:
+            return result.out_of_sample_metrics, "out_of_sample_metrics"
+        if self.require_out_of_sample_metrics:
+            raise ServiceContractError(
+                f"{label} requires out-of-sample metrics."
+            )
+        return result.metrics, "metrics"
 
     def _metric(
         self,

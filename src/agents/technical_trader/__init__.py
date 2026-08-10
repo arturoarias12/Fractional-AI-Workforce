@@ -19,17 +19,22 @@ from .execution import (
     DEFAULT_DATA_SERVICE_TIMEOUT_SECONDS,
     DEFAULT_MODEL_CALL_TIMEOUT_SECONDS,
     DEFAULT_TRADER_TIMEOUT_SECONDS,
+    MAX_TRADER_TIMEOUT_SECONDS,
     MAX_TIMEOUT_SECONDS,
     ExecutionPolicy,
 )
 from .executors import (
     BENCHMARK_FALLBACK_EXECUTOR_ID,
     HEAD_PATTERN_EXECUTOR_ID,
+    HORIZON_ADAPTIVE_TREND_EXECUTOR_ID,
     INVERSE_PATTERN_EXECUTOR_ID,
     LONG_ONLY_TECHNICAL_EXECUTORS,
     MOVING_AVERAGE_TREND_EXECUTOR_ID,
     MULTI_ASSET_PORTFOLIO_EXECUTOR_ID,
     RESISTANCE_BREAKOUT_EXECUTOR_ID,
+    ROLLING_RESISTANCE_BREAKOUT_EXECUTOR_ID,
+    ROLLING_SUPPORT_REACTION_EXECUTOR_ID,
+    ROLLING_VOLUME_BREAKOUT_EXECUTOR_ID,
     SUPPORT_REACTION_EXECUTOR_ID,
     TECHNICAL_EXECUTOR_SPECS,
     TECHNICAL_STRATEGY_EXECUTORS,
@@ -56,9 +61,11 @@ from .runtime import (
     make_langgraph_node,
 )
 from .horizon import (
+    HorizonEvaluationWindow,
     TechnicalHorizonProfile,
     resolve_technical_horizon,
     screen_horizon_opportunities,
+    validate_horizon_evaluation_window,
 )
 from .services import BacktestEngine, DataService, ValidationSplitPolicy
 from .tools import (
@@ -87,9 +94,12 @@ __all__ = [
     "DeterministicTechnicalAnalysisToolkit",
     "ExecutionPolicy",
     "HEAD_PATTERN_EXECUTOR_ID",
+    "HORIZON_ADAPTIVE_TREND_EXECUTOR_ID",
+    "HorizonEvaluationWindow",
     "INVERSE_PATTERN_EXECUTOR_ID",
     "InMemoryMetricsSink",
     "MAX_TIMEOUT_SECONDS",
+    "MAX_TRADER_TIMEOUT_SECONDS",
     "LONG_ONLY_TECHNICAL_EXECUTORS",
     "MOVING_AVERAGE_TREND_EXECUTOR_ID",
     "MULTI_ASSET_PORTFOLIO_EXECUTOR_ID",
@@ -105,6 +115,9 @@ __all__ = [
     "ModelUsage",
     "NullMetricsSink",
     "RESISTANCE_BREAKOUT_EXECUTOR_ID",
+    "ROLLING_RESISTANCE_BREAKOUT_EXECUTOR_ID",
+    "ROLLING_SUPPORT_REACTION_EXECUTOR_ID",
+    "ROLLING_VOLUME_BREAKOUT_EXECUTOR_ID",
     "ServiceContractError",
     "StagedTraderAgent",
     "SUPPORT_REACTION_EXECUTOR_ID",
@@ -126,4 +139,5 @@ __all__ = [
     "multi_asset_technical_portfolio_executor",
     "resolve_technical_horizon",
     "screen_horizon_opportunities",
+    "validate_horizon_evaluation_window",
 ]

@@ -13,10 +13,14 @@ if TYPE_CHECKING:
 from .catalog import (
     BENCHMARK_FALLBACK_EXECUTOR_ID,
     HEAD_PATTERN_EXECUTOR_ID,
+    HORIZON_ADAPTIVE_TREND_EXECUTOR_ID,
     INVERSE_PATTERN_EXECUTOR_ID,
     MOVING_AVERAGE_TREND_EXECUTOR_ID,
     MULTI_ASSET_PORTFOLIO_EXECUTOR_ID,
     RESISTANCE_BREAKOUT_EXECUTOR_ID,
+    ROLLING_RESISTANCE_BREAKOUT_EXECUTOR_ID,
+    ROLLING_SUPPORT_REACTION_EXECUTOR_ID,
+    ROLLING_VOLUME_BREAKOUT_EXECUTOR_ID,
     SUPPORT_REACTION_EXECUTOR_ID,
     TARGET_PORTFOLIO_ASSET_COUNT,
     VOLUME_BREAKOUT_EXECUTOR_ID,
@@ -275,6 +279,391 @@ class MovingAverageTrendExecutor:
 
 
 @dataclass(frozen=True, slots=True)
+class HorizonAdaptiveTrendParameters:
+    moving_average: MovingAverageParameters
+    review_interval_bars: int
+
+    @classmethod
+    def from_mapping(
+        cls,
+        values: Mapping[str, Any],
+    ) -> "HorizonAdaptiveTrendParameters":
+        return cls(
+            moving_average=MovingAverageParameters.from_mapping(values),
+            review_interval_bars=positive_integer(
+                values,
+                "review_interval_bars",
+                maximum=252,
+            ),
+        )
+
+
+class HorizonAdaptiveTrendSession(MovingAverageTrendSession):
+    """Recalculate trend state from past bars at the horizon cadence."""
+
+    def __init__(
+        self,
+        parameters: HorizonAdaptiveTrendParameters,
+        settings: ExecutionSettings,
+    ) -> None:
+        super().__init__(parameters.moving_average, settings)
+        self.adaptive_parameters = parameters
+        self._last_review_history_count: int | None = None
+
+    def _review_due(self, history_count: int) -> bool:
+        previous = self._last_review_history_count
+        if previous is None:
+            self._last_review_history_count = history_count
+            return True
+        if history_count - previous < self.adaptive_parameters.review_interval_bars:
+            return False
+        self._last_review_history_count = history_count
+        return True
+
+    def target_weights(
+        self,
+        context: StrategyEvaluationContext,
+    ) -> Mapping[str, float] | None:
+        bar = context.current_bars.get(self.risk.symbol)
+        if bar is None:
+            return None
+        history = context.history.get(self.risk.symbol, ())
+        current = self._averages(history, previous=False)
+        if current is None:
+            return None
+        invested = self.observe_position(bar, context.positions)
+        fast, slow = current
+        close = float(bar.close)
+        if invested:
+            if fast <= slow or close <= slow or self.exit_required(
+                close=close,
+                technical_invalidation=slow,
+            ):
+                return {}
+            return None
+        if not self._review_due(len(history)):
+            return None
+        if fast > slow and close > slow:
+            return self.prepare_entry(history)
+        return None
+
+
+class HorizonAdaptiveTrendExecutor:
+    executor_id = HORIZON_ADAPTIVE_TREND_EXECUTOR_ID
+
+    def create_session(
+        self,
+        request: BacktestRequest,
+    ) -> HorizonAdaptiveTrendSession:
+        return HorizonAdaptiveTrendSession(
+            HorizonAdaptiveTrendParameters.from_mapping(
+                request.candidate.parameters
+            ),
+            ExecutionSettings.from_request(request),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RollingLevelParameters:
+    risk: RiskManagedParameters
+    review_interval_bars: int
+    rolling_level_lookback_bars: int
+    pivot_window: int
+    merge_tolerance_percent: float
+    min_touches: int
+    maximum_level_distance_percent: float
+    entry_buffer_percent: float
+    support_entry_floor_buffer_percent: float
+    technical_invalidation_buffer_percent: float
+    volume_lookback_bars: int | None = None
+    minimum_relative_volume: float | None = None
+
+    @classmethod
+    def from_mapping(
+        cls,
+        values: Mapping[str, Any],
+        *,
+        support: bool,
+        require_volume: bool = False,
+    ) -> "RollingLevelParameters":
+        return cls(
+            risk=RiskManagedParameters.from_mapping(values),
+            review_interval_bars=positive_integer(
+                values, "review_interval_bars", maximum=252
+            ),
+            rolling_level_lookback_bars=positive_integer(
+                values,
+                "rolling_level_lookback_bars",
+                minimum=20,
+                maximum=1_260,
+            ),
+            pivot_window=positive_integer(
+                values, "pivot_window", maximum=25
+            ),
+            merge_tolerance_percent=number(
+                values,
+                "merge_tolerance_percent",
+                minimum=0.000001,
+                maximum=0.10,
+            ),
+            min_touches=positive_integer(
+                values, "min_touches", minimum=2, maximum=20
+            ),
+            maximum_level_distance_percent=number(
+                values,
+                "maximum_level_distance_percent",
+                minimum=0.01,
+                maximum=100.0,
+            ),
+            entry_buffer_percent=number(
+                values,
+                "entry_buffer_percent",
+                minimum=0.0,
+                maximum=0.25,
+            ),
+            support_entry_floor_buffer_percent=(
+                number(
+                    values,
+                    "support_entry_floor_buffer_percent",
+                    minimum=0.0,
+                    maximum=0.25,
+                )
+                if support
+                else 0.0
+            ),
+            technical_invalidation_buffer_percent=number(
+                values,
+                "technical_invalidation_buffer_percent",
+                minimum=0.0,
+                maximum=0.25,
+            ),
+            volume_lookback_bars=(
+                positive_integer(
+                    values,
+                    "volume_lookback_bars",
+                    minimum=2,
+                    maximum=252,
+                )
+                if require_volume
+                else None
+            ),
+            minimum_relative_volume=(
+                number(
+                    values,
+                    "minimum_relative_volume",
+                    minimum=1.0,
+                    maximum=10.0,
+                )
+                if require_volume
+                else None
+            ),
+        )
+
+
+def _rolling_structural_level(
+    history: Any,
+    *,
+    support: bool,
+    reference_close: float,
+    lookback_bars: int,
+    pivot_window: int,
+    merge_tolerance_percent: float,
+    min_touches: int,
+) -> float | None:
+    """Return the nearest repeated pivot cluster using past bars only."""
+
+    completed = tuple(history[:-1])[-lookback_bars:]
+    if len(completed) < 2 * pivot_window + 1:
+        return None
+    pivots: list[float] = []
+    for index in range(pivot_window, len(completed) - pivot_window):
+        bar = completed[index]
+        neighbours = (
+            completed[index - pivot_window : index]
+            + completed[index + 1 : index + pivot_window + 1]
+        )
+        if support:
+            value = float(bar.low)
+            if value <= min(float(item.low) for item in neighbours):
+                pivots.append(value)
+        else:
+            value = float(bar.high)
+            if value >= max(float(item.high) for item in neighbours):
+                pivots.append(value)
+    if not pivots:
+        return None
+    clusters: list[list[float]] = []
+    for value in sorted(pivots):
+        if not clusters:
+            clusters.append([value])
+            continue
+        center = sum(clusters[-1]) / len(clusters[-1])
+        if abs(value - center) / center <= merge_tolerance_percent:
+            clusters[-1].append(value)
+        else:
+            clusters.append([value])
+    levels = [
+        sum(cluster) / len(cluster)
+        for cluster in clusters
+        if len(cluster) >= min_touches
+    ]
+    if support:
+        eligible = [level for level in levels if level <= reference_close]
+        return max(eligible) if eligible else None
+    crossed = [level for level in levels if level <= reference_close]
+    if crossed:
+        return max(crossed)
+    eligible = [level for level in levels if level > reference_close]
+    return min(eligible) if eligible else None
+
+
+class RollingLevelSession(VolatilityManagedSession):
+    """Recalculate a structural level without reading future bars."""
+
+    def __init__(
+        self,
+        parameters: RollingLevelParameters,
+        settings: ExecutionSettings,
+        *,
+        support: bool,
+        require_volume: bool = False,
+    ) -> None:
+        super().__init__(parameters.risk, settings)
+        self.parameters = parameters
+        self.support = support
+        self.require_volume = require_volume
+        self._last_review_history_count: int | None = None
+        self._active_anchor: float | None = None
+
+    def _review_due(self, history_count: int) -> bool:
+        previous = self._last_review_history_count
+        if previous is None:
+            self._last_review_history_count = history_count
+            return True
+        if history_count - previous < self.parameters.review_interval_bars:
+            return False
+        self._last_review_history_count = history_count
+        return True
+
+    def _volume_confirmed(self, history: Any, bar: Any) -> bool:
+        if not self.require_volume:
+            return True
+        lookback = self.parameters.volume_lookback_bars
+        minimum = self.parameters.minimum_relative_volume
+        if lookback is None or minimum is None or len(history) < lookback + 1:
+            return False
+        if bar.volume is None:
+            return False
+        raw = [item.volume for item in history[-(lookback + 1) : -1]]
+        if any(value is None for value in raw):
+            return False
+        values = [float(value) for value in raw if value is not None]
+        average = sum(values) / len(values)
+        return average > 0 and float(bar.volume) / average >= minimum
+
+    def target_weights(
+        self,
+        context: StrategyEvaluationContext,
+    ) -> Mapping[str, float] | None:
+        bar = context.current_bars.get(self.risk.symbol)
+        if bar is None:
+            return None
+        history = context.history.get(self.risk.symbol, ())
+        invested = self.observe_position(bar, context.positions)
+        close = float(bar.close)
+        if invested:
+            anchor = self._active_anchor
+            if anchor is None:
+                raise RuntimeError("Rolling level position has no active anchor.")
+            invalidation = anchor * (
+                1.0 - self.parameters.technical_invalidation_buffer_percent
+            )
+            if self.exit_required(
+                close=close,
+                technical_invalidation=invalidation,
+            ):
+                return {}
+            return None
+        if not self._review_due(len(history)):
+            return None
+        anchor = _rolling_structural_level(
+            history,
+            support=self.support,
+            reference_close=close,
+            lookback_bars=self.parameters.rolling_level_lookback_bars,
+            pivot_window=self.parameters.pivot_window,
+            merge_tolerance_percent=(
+                self.parameters.merge_tolerance_percent
+            ),
+            min_touches=self.parameters.min_touches,
+        )
+        if anchor is None:
+            return None
+        distance_percent = abs(close / anchor - 1.0) * 100.0
+        if distance_percent > self.parameters.maximum_level_distance_percent:
+            return None
+        if self.support:
+            ceiling = anchor * (1.0 + self.parameters.entry_buffer_percent)
+            floor = anchor * (
+                1.0 - self.parameters.support_entry_floor_buffer_percent
+            )
+            qualifies = floor <= close <= ceiling
+        else:
+            trigger = anchor * (1.0 + self.parameters.entry_buffer_percent)
+            qualifies = close >= trigger and self._volume_confirmed(history, bar)
+        if not qualifies:
+            return None
+        target = self.prepare_entry(history)
+        if target is not None:
+            self._active_anchor = anchor
+        return target
+
+
+class RollingSupportReactionExecutor:
+    executor_id = ROLLING_SUPPORT_REACTION_EXECUTOR_ID
+
+    def create_session(self, request: BacktestRequest) -> RollingLevelSession:
+        return RollingLevelSession(
+            RollingLevelParameters.from_mapping(
+                request.candidate.parameters,
+                support=True,
+            ),
+            ExecutionSettings.from_request(request),
+            support=True,
+        )
+
+
+class RollingResistanceBreakoutExecutor:
+    executor_id = ROLLING_RESISTANCE_BREAKOUT_EXECUTOR_ID
+
+    def create_session(self, request: BacktestRequest) -> RollingLevelSession:
+        return RollingLevelSession(
+            RollingLevelParameters.from_mapping(
+                request.candidate.parameters,
+                support=False,
+            ),
+            ExecutionSettings.from_request(request),
+            support=False,
+        )
+
+
+class RollingVolumeConfirmedBreakoutExecutor:
+    executor_id = ROLLING_VOLUME_BREAKOUT_EXECUTOR_ID
+
+    def create_session(self, request: BacktestRequest) -> RollingLevelSession:
+        return RollingLevelSession(
+            RollingLevelParameters.from_mapping(
+                request.candidate.parameters,
+                support=False,
+                require_volume=True,
+            ),
+            ExecutionSettings.from_request(request),
+            support=False,
+            require_volume=True,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class VolumeBreakoutParameters:
     level: LevelParameters
     volume_lookback_bars: int
@@ -496,11 +885,21 @@ class HeadShouldersBreakdownExecutor:
 support_reaction_executor = SupportReactionExecutor()
 resistance_breakout_executor = ResistanceBreakoutExecutor()
 moving_average_trend_executor = MovingAverageTrendExecutor()
+horizon_adaptive_trend_executor = HorizonAdaptiveTrendExecutor()
+rolling_support_reaction_executor = RollingSupportReactionExecutor()
+rolling_resistance_breakout_executor = RollingResistanceBreakoutExecutor()
+rolling_volume_confirmed_breakout_executor = (
+    RollingVolumeConfirmedBreakoutExecutor()
+)
 volume_confirmed_breakout_executor = VolumeConfirmedBreakoutExecutor()
 inverse_head_shoulders_breakout_executor = InverseHeadShouldersBreakoutExecutor()
 head_shoulders_breakdown_executor = HeadShouldersBreakdownExecutor()
 
 TECHNICAL_SLEEVE_EXECUTORS = (
+    rolling_support_reaction_executor,
+    rolling_resistance_breakout_executor,
+    horizon_adaptive_trend_executor,
+    rolling_volume_confirmed_breakout_executor,
     support_reaction_executor,
     resistance_breakout_executor,
     moving_average_trend_executor,
@@ -513,6 +912,48 @@ _SLEEVE_EXECUTOR_BY_ID = {
 }
 
 _FAMILY_PARAMETERS: dict[str, frozenset[str]] = {
+    ROLLING_SUPPORT_REACTION_EXECUTOR_ID: frozenset(
+        {
+            "review_interval_bars",
+            "rolling_level_lookback_bars",
+            "pivot_window",
+            "merge_tolerance_percent",
+            "min_touches",
+            "maximum_level_distance_percent",
+            "entry_buffer_percent",
+            "support_entry_floor_buffer_percent",
+            "technical_invalidation_buffer_percent",
+        }
+    ),
+    ROLLING_RESISTANCE_BREAKOUT_EXECUTOR_ID: frozenset(
+        {
+            "review_interval_bars",
+            "rolling_level_lookback_bars",
+            "pivot_window",
+            "merge_tolerance_percent",
+            "min_touches",
+            "maximum_level_distance_percent",
+            "entry_buffer_percent",
+            "technical_invalidation_buffer_percent",
+        }
+    ),
+    HORIZON_ADAPTIVE_TREND_EXECUTOR_ID: frozenset(
+        {"fast_window", "slow_window", "review_interval_bars"}
+    ),
+    ROLLING_VOLUME_BREAKOUT_EXECUTOR_ID: frozenset(
+        {
+            "review_interval_bars",
+            "rolling_level_lookback_bars",
+            "pivot_window",
+            "merge_tolerance_percent",
+            "min_touches",
+            "maximum_level_distance_percent",
+            "entry_buffer_percent",
+            "technical_invalidation_buffer_percent",
+            "volume_lookback_bars",
+            "minimum_relative_volume",
+        }
+    ),
     SUPPORT_REACTION_EXECUTOR_ID: frozenset(
         {
             "anchor_level",
@@ -901,6 +1342,9 @@ __all__ = [
     "BenchmarkFallbackParameters",
     "BenchmarkFallbackSession",
     "HeadShouldersBreakdownExecutor",
+    "HorizonAdaptiveTrendExecutor",
+    "HorizonAdaptiveTrendParameters",
+    "HorizonAdaptiveTrendSession",
     "InverseHeadShouldersBreakoutExecutor",
     "LONG_ONLY_TECHNICAL_EXECUTORS",
     "LevelParameters",
@@ -913,6 +1357,11 @@ __all__ = [
     "PatternBreakSession",
     "PatternParameters",
     "ResistanceBreakoutExecutor",
+    "RollingLevelParameters",
+    "RollingLevelSession",
+    "RollingResistanceBreakoutExecutor",
+    "RollingSupportReactionExecutor",
+    "RollingVolumeConfirmedBreakoutExecutor",
     "SupportReactionExecutor",
     "TECHNICAL_STRATEGY_EXECUTORS",
     "TECHNICAL_SLEEVE_EXECUTORS",
@@ -923,10 +1372,14 @@ __all__ = [
     "VolumeConfirmedBreakoutExecutor",
     "benchmark_fallback_executor",
     "head_shoulders_breakdown_executor",
+    "horizon_adaptive_trend_executor",
     "inverse_head_shoulders_breakout_executor",
     "moving_average_trend_executor",
     "multi_asset_technical_portfolio_executor",
     "resistance_breakout_executor",
+    "rolling_resistance_breakout_executor",
+    "rolling_support_reaction_executor",
+    "rolling_volume_confirmed_breakout_executor",
     "support_reaction_executor",
     "volume_confirmed_breakout_executor",
 ]

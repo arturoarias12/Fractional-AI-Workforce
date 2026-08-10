@@ -183,11 +183,26 @@ class VolumeObservation(ContractModel):
 
 class TechnicalHorizonContext(ContractModel):
     label: NonEmptyStr
-    horizon_trading_days: int = Field(ge=1, le=1260)
-    maximum_holding_bars: int = Field(ge=1, le=1260)
+    horizon_trading_days: int = Field(ge=1)
+    maximum_holding_bars: int = Field(ge=1)
     moving_average_windows: list[MovingAverageConfig] = Field(min_length=1)
     maximum_recent_cross_age_bars: int = Field(ge=1)
     maximum_level_distance_percent: float = Field(gt=0)
+    review_interval_bars: int = Field(default=1, ge=1, le=252)
+    rolling_level_lookback_bars: int = Field(default=126, ge=20, le=1260)
+    rolling_pivot_window: int = Field(default=2, ge=1, le=25)
+    rolling_merge_tolerance_percent: float = Field(
+        default=0.01,
+        gt=0,
+        le=0.10,
+    )
+    rolling_min_touches: int = Field(default=2, ge=2, le=20)
+    volatility_lookback_bars: int = Field(default=20, ge=2, le=252)
+    profit_target_sigma_multiple: float = Field(default=1.5, gt=0, le=5.0)
+    stop_loss_sigma_multiple: float = Field(default=1.0, gt=0, le=5.0)
+    family_preference_weights: dict[NonEmptyStr, float] = Field(
+        default_factory=dict
+    )
     minimum_training_observations: int = Field(ge=5)
     resolution_source: Literal["pm_mandate", "conservative_default"] = (
         "pm_mandate"
