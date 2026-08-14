@@ -53,6 +53,8 @@ PM_MANDATE = {
     "constraint": "Avoid high concentration and use the 120-ETF universe.",
 }
 
+RISK_OPTIONS = ["Conservative", "Moderate", "Growth"]
+
 
 def make_agents(phase: str, staffing: dict[str, str] | None = None) -> dict[str, dict]:
     """Return predictable simulated data for the professor demo."""
@@ -151,6 +153,7 @@ def init_state() -> None:
     defaults = {
         "view": "dashboard", "selected_agent": "technical", "phase": "idle",
         "round_number": 4, "pm_decision": None,
+        "pm_mandate": None,
         "staffing": {key: "Active" for key in ["technical", "fundamental", "quant", "risk", "reporting"]},
         "memory": [
             "Round 03 — Quant strategy required stronger out-of-sample validation.",
@@ -208,6 +211,45 @@ def display_value(value: Any) -> None:
         st.json(value)
     else:
         st.write(value if value not in (None, "") else "N/A")
+
+
+@st.dialog("Create PM Research Request")
+def pm_request_dialog() -> None:
+    """Collect the four PM intake fields defined in the shared schema."""
+
+    st.caption("This creates a simulated mandate in demo mode. It does not call an agent.")
+    with st.form("pm-research-request"):
+        objective = st.text_area(
+            "Investment objective *",
+            value=(st.session_state.pm_mandate or {}).get("objective", PM_MANDATE["objective"]),
+            help="What should the research round try to achieve?",
+        )
+        risk = st.selectbox(
+            "Risk tolerance *", RISK_OPTIONS,
+            index=RISK_OPTIONS.index((st.session_state.pm_mandate or {}).get("risk", PM_MANDATE["risk"])),
+        )
+        horizon = st.text_input(
+            "Time horizon *",
+            value=(st.session_state.pm_mandate or {}).get("time_horizon", "Three months"),
+        )
+        constraints = st.text_area(
+            "Constraints *",
+            value=(st.session_state.pm_mandate or {}).get("constraint", PM_MANDATE["constraint"]),
+        )
+        submitted = st.form_submit_button("Create Mandate", type="primary", use_container_width=True)
+
+    if submitted:
+        if not all(value.strip() for value in [objective, horizon, constraints]):
+            st.error("Please complete the required fields before creating the mandate.")
+            return
+        st.session_state.pm_mandate = {
+            "objective": objective.strip(), "risk": risk, "time_horizon": horizon.strip(),
+            "constraint": constraints.strip(), "submitted_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        st.session_state.phase = "idle"
+        st.session_state.pm_decision = None
+        st.session_state.notice = "PM mandate created. You can now start the simulated research round."
+        st.rerun()
 
 
 @st.dialog("Confirm staffing action")
@@ -270,24 +312,34 @@ def dashboard() -> None:
     snapshot = snapshot_data()
     agents = current_agents(snapshot)
     workflow = snapshot.get("workflow", {}) if snapshot else {}
-    mandate_data = snapshot.get("mandate", {}) if snapshot else PM_MANDATE
+    mandate_data = snapshot.get("mandate", {}) if snapshot else (st.session_state.pm_mandate or {})
     current_round = workflow.get("round_number") or st.session_state.round_number
     st.subheader(f"Round {current_round:02d} · ETF Research")
     mandate, controls = st.columns([4, 1])
     with mandate:
         st.markdown("#### Human PM Mandate")
-        st.write(f"**Objective:** {mandate_data.get('objective') or mandate_data.get('investment_objective') or 'N/A'}")
-        st.caption(f"Risk profile: {mandate_data.get('risk') or mandate_data.get('risk_profile') or 'N/A'} · Constraint: {mandate_data.get('constraint') or mandate_data.get('constraints') or 'N/A'}")
+        if mandate_data:
+            st.write(f"**Objective:** {mandate_data.get('objective') or mandate_data.get('investment_objective') or 'N/A'}")
+            st.caption(
+                f"Risk tolerance: {mandate_data.get('risk') or mandate_data.get('risk_profile') or 'N/A'} "
+                f"· Time horizon: {mandate_data.get('time_horizon') or mandate_data.get('investment_horizon') or 'N/A'} "
+                f"· Constraints: {mandate_data.get('constraint') or mandate_data.get('constraints') or mandate_data.get('pm_notes') or 'N/A'}"
+            )
+        else:
+            st.info("No research request has been submitted. Create a PM Research Request to begin.")
     with controls:
         st.write("")
         if snapshot:
             st.caption("Snapshot mode is read-only. Run the workflow again and export a new snapshot to refresh it.")
         else:
-            can_start = st.session_state.phase in {"idle", "completed"}
+            if st.button("Create PM Research Request", type="primary", use_container_width=True):
+                pm_request_dialog()
+            can_start = bool(st.session_state.pm_mandate) and st.session_state.phase in {"idle", "completed"}
             if st.button("Start Research", type="primary", use_container_width=True, disabled=not can_start):
                 st.session_state.phase = "running"
                 st.session_state.pm_decision = None
                 active_agents = [name for name, status in st.session_state.staffing.items() if status == "Active"]
+                st.session_state.memory.insert(0, f"PM submitted a research mandate for Round {current_round:02d}.")
                 st.session_state.notice = f"Round {current_round:02d} is running. Active workforce: {len(active_agents)} agents."
                 st.rerun()
             if st.button("Advance Demo to Completed Review", use_container_width=True, disabled=st.session_state.phase == "idle"):
@@ -300,7 +352,7 @@ def dashboard() -> None:
     pm_col, trader_col, risk_col, report_col = st.columns([1.15, 1.45, 1.2, 1.2])
     with pm_col:
         st.markdown("<div class='workflow-middle-spacer'></div>", unsafe_allow_html=True)
-        pm_state = "Completed" if st.session_state.phase != "idle" else "Idle"
+        pm_state = "Completed" if st.session_state.pm_mandate else "Idle"
         workflow_box("PM Intake", "Human mandate", "Completed" if snapshot else pm_state)
     with trader_col:
         st.markdown("<div class='parallel-label'>PARALLEL RESEARCH BRANCHES</div>", unsafe_allow_html=True)

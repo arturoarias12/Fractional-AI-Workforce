@@ -32,6 +32,9 @@ After the first-time setup, the final command in the matching section is all tha
 
 ## What the prototype demonstrates
 
+- A PM Research Request form with the four intake fields in the shared schema:
+  investment objective, risk tolerance, time horizon, and constraints. In
+  interactive demo mode it creates a simulated `pm_mandate` before research can start.
 - Current lifecycle state, task, input, output, timing, next step and error field for each agent.
 - The complete per-agent productivity metrics defined in the schema: task completion time, success rate, API cost, retry count and failed count.
 - A summary of the current research round on the dashboard.
@@ -51,6 +54,11 @@ app sidebar, choose **Workflow snapshot** to view it. This mode is deliberately
 read-only: PM decisions and staffing controls stay in the workflow, then appear
 in the dashboard after a new export.
 
+For the final integrated version, submitting the PM Research Request should call
+the orchestration team's create-run/submit-mandate function. That function
+creates the real `pm_mandate`, assigns active traders, and exports an updated
+snapshot whenever the workflow reaches a meaningful state transition.
+
 To export a graph result that has already been saved as JSON:
 
 ```bash
@@ -65,14 +73,6 @@ as JSON and run the same command with its path.
 The adapter preserves every required productivity-metric field. Until the
 workflow emits `operational_events`, event-derived values (success rate, API
 cost, retries, and failures) intentionally show `N/A` instead of invented data.
-
-## Suggested Friday demo
-
-1. Start Research to show the parallel workflow.
-2. Choose **Advance Demo to Completed Review** to move directly to the review state.
-3. Open **Quant Trader** and show its complete schema fields, metrics, and Risk outcome. Optionally choose **Bench** or **Pivot** for the next round.
-4. Return to the dashboard and open the Research Report.
-5. Choose **Request Another Round**. Confirm that the dashboard advances from Round 04 to Round 05 and that Memory records the previous lesson.
 
 ## Scope
 
