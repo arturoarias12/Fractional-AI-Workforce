@@ -8,9 +8,7 @@ Fakes settled technical/fundamental/quant trader packages the way the graph
 would deliver them, runs the real RiskAgentImpl to produce a genuine
 RiskReviewResponse, and feeds the surviving candidates into
 ReportingAgentImpl.report() so the full data flow can be inspected by eye.
-This is an exploratory script rather than an automated test - nothing here
-asserts anything, hence no `test_` prefix in the filename.
-
+This is an exploratory script rather than an automated test.
 """
 
 import asyncio
@@ -37,8 +35,7 @@ async def main() -> None:
     candidates = three_clean_candidates()
     risk_request = build_request(candidates)
 
-    # 2. Actually run the Risk Agent (the real implementation a teammate
-    #    already wrote).
+    # 2. Actually run the Risk Agent
     risk_agent = RiskAgentImpl()
     risk_response = await risk_agent.review(risk_request)
 
@@ -61,7 +58,7 @@ async def main() -> None:
         risk_response=risk_response,
     )
 
-    # 4. Actually run your Reporting Agent.
+    # 4. Actually run the Reporting Agent.
     reporting_agent = ReportingAgentImpl()  # works fine without a model_client
     output = await reporting_agent.report(reporting_request)
 
