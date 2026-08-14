@@ -1,6 +1,4 @@
-"""Acceptance tests for the Reporting Agent.
-
-Manual end-to-end check for the Reporting Agent.
+"""Manual end-to-end check for the Reporting Agent.
 
 Chains: technical/fundamental/quant -> risk -> reporting.
 
@@ -8,15 +6,14 @@ Fakes settled technical/fundamental/quant trader packages the way the graph
 would deliver them, runs the real RiskAgentImpl to produce a genuine
 RiskReviewResponse, and feeds the surviving candidates into
 ReportingAgentImpl.report() so the full data flow can be inspected by eye.
-This is an exploratory script rather than an automated test.
+This is an exploratory script rather than an automated test, hence no `test_`
+prefix in the filename.
 """
 
 import asyncio
 import sys
 from pathlib import Path
 
-# This script lives in tests/reporting_agent/, and risk_fixtures.py lives
-# next door in tests/risk_agent/, so we use parent.parent to reach it.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "risk_agent"))
 
 from risk_fixtures import (
@@ -30,8 +27,8 @@ from protocols.reporting import ReportingRequest  # noqa: E402
 
 
 async def main() -> None:
-    # 1. Fake the technical / fundamental / quant trader outputs (no real
-    #    trader code needed).
+    # 1. Fake the technical / fundamental / quant trader outputs
+    # (no real trader code needed).
     candidates = three_clean_candidates()
     risk_request = build_request(candidates)
 
@@ -59,7 +56,7 @@ async def main() -> None:
     )
 
     # 4. Actually run the Reporting Agent.
-    reporting_agent = ReportingAgentImpl()  # works fine without a model_client
+    reporting_agent = ReportingAgentImpl()
     output = await reporting_agent.report(reporting_request)
 
     print("\n=== Reporting Agent output ===")
