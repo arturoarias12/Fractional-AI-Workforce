@@ -1,7 +1,8 @@
 # Fractional AI Workforce — Clickable Mockup
 
-This is a Streamlit clickable mockup for a professor review of the Fractional AI Workforce project.
-It uses simulated data only. It does not execute trades, call an AI model, or connect to the team backend.
+This is a Streamlit dashboard for the Fractional AI Workforce project. It has two
+safe modes: an interactive simulated demo, and a read-only WorkflowState snapshot.
+It does not execute trades or invoke agents from the UI.
 
 The mockup follows the team workflow:
 
@@ -37,6 +38,34 @@ After the first-time setup, the final command in the matching section is all tha
 - A human PM decision and a Memory record that carries lessons into a later simulated round.
 - Simple next-round staffing controls after review. `Hire` restores a benched agent, `Bench` removes an active agent from the next round, and `Pivot` records a new next-round research focus. These controls do not modify a running or completed round.
 
+## Workflow snapshot integration
+
+The LangGraph workflow is the source of truth. The dashboard reads one exported
+JSON file rather than calling five agents independently:
+
+`WorkflowState → dashboard/workflow_adapter.py → dashboard/data/workflow_snapshot.json → Streamlit`
+
+The included `data/sample_workflow_state.json` and `data/workflow_snapshot.json`
+show the expected handoff using the currently available workflow fields. In the
+app sidebar, choose **Workflow snapshot** to view it. This mode is deliberately
+read-only: PM decisions and staffing controls stay in the workflow, then appear
+in the dashboard after a new export.
+
+To export a graph result that has already been saved as JSON:
+
+```bash
+cd dashboard
+python3 export_snapshot.py data/sample_workflow_state.json
+```
+
+This overwrites `data/workflow_snapshot.json` with the dashboard-safe version.
+When the orchestration team has a final `WorkflowState`, they can save that state
+as JSON and run the same command with its path.
+
+The adapter preserves every required productivity-metric field. Until the
+workflow emits `operational_events`, event-derived values (success rate, API
+cost, retries, and failures) intentionally show `N/A` instead of invented data.
+
 ## Suggested Friday demo
 
 1. Start Research to show the parallel workflow.
@@ -47,4 +76,6 @@ After the first-time setup, the final command in the matching section is all tha
 
 ## Scope
 
-This is intentionally a clickable UI prototype. Live agent execution, live metrics, backend integration, persistent storage and real ETF/backtest data are later integration work.
+The interactive demo is intentionally a clickable prototype. Snapshot export is
+the first integration seam; live agent execution, live event emission, persistent
+storage and real ETF/backtest data remain team integration work.

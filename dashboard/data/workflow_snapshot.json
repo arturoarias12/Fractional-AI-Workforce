@@ -1,0 +1,53 @@
+{
+  "schema_version": "0.1.0",
+  "source": "workflow_state",
+  "generated_at": "2026-08-14T01:13:10-04:00",
+  "workflow": {"workflow_id": "demo-workflow-004", "run_id": "demo-run-004", "round_number": 4, "status": "Completed"},
+  "mandate": {
+    "workflow_id": "demo-workflow-004", "task_id": "pm-mandate-004", "as_of_date": "2026-08-14",
+    "investment_objective": "Find a moderate-risk ETF strategy with broad diversification.",
+    "risk_profile": "Moderate", "investment_horizon": "Three months",
+    "permitted_asset_universe": ["120-ETF universe"], "pm_notes": "Avoid high concentration."
+  },
+  "agents": {
+    "technical": {
+      "agent_id": "technical_trader_agent", "name": "Technical Trader", "role": "Price action, volume and indicators", "staffing_status": "Active", "state": "Completed",
+      "task": "pm-mandate-004.round-4.technical.trader", "input": {"round_number": 4}, "output": {"package_id": "technical-004", "status": "completed"},
+      "start_time": "2026-08-14T10:02:00+00:00", "end_time": "2026-08-14T10:05:06+00:00", "next_step": "trader_join", "error_message": null,
+      "metrics": {"task_completion_time": "0:03:06", "success_rate": "N/A", "api_cost": "N/A", "retry_count": "N/A", "failed_count": "N/A"},
+      "package": {"hypothesis": "Trend-following ETF screen", "backtest_result": {"metrics": {"return": 0.074}}}
+    },
+    "fundamental": {
+      "agent_id": "fundamental_trader_agent", "name": "Fundamental Trader", "role": "ETF fund characteristics and exposure", "staffing_status": "Benched", "state": "Idle",
+      "task": "Benched for this round", "input": null, "output": null, "start_time": null, "end_time": null, "next_step": "trader_join", "error_message": null,
+      "metrics": {"task_completion_time": "N/A", "success_rate": "N/A", "api_cost": "N/A", "retry_count": "N/A", "failed_count": "N/A"}, "package": {}
+    },
+    "quant": {
+      "agent_id": "quant_trader_agent", "name": "Quant Trader", "role": "Statistical anomalies and correlations", "staffing_status": "Active", "state": "Completed",
+      "task": "pm-mandate-004.round-4.quant.trader", "input": {"round_number": 4}, "output": {"package_id": "quant-004", "status": "completed"},
+      "start_time": "2026-08-14T10:02:00+00:00", "end_time": "2026-08-14T10:07:11+00:00", "next_step": "trader_join", "error_message": null,
+      "metrics": {"task_completion_time": "0:05:11", "success_rate": "N/A", "api_cost": "N/A", "retry_count": "N/A", "failed_count": "N/A"},
+      "package": {"hypothesis": "Cross-asset mean-reversion screen", "backtest_result": {"metrics": {"return": 0.081}}}
+    },
+    "risk": {
+      "agent_id": "risk_agent", "name": "Risk / Skeptic", "role": "Overfitting and cherry-picking review", "staffing_status": "Active", "state": "Completed",
+      "task": "pm-mandate-004.round-4.risk", "input": {"candidate_count": 2}, "output": {"approved_candidate_ids": ["technical-004"]},
+      "start_time": "2026-08-14T10:07:11+00:00", "end_time": "2026-08-14T10:09:14+00:00", "next_step": "prepare_reporting", "error_message": null,
+      "metrics": {"task_completion_time": "0:02:03", "success_rate": "N/A", "api_cost": "N/A", "retry_count": "N/A", "failed_count": "N/A"},
+      "package": {"approved_candidate_ids": ["technical-004"], "decisions": [{"candidate_id": "technical-004", "verdict": "approved"}, {"candidate_id": "quant-004", "verdict": "vetoed"}]}
+    },
+    "reporting": {
+      "agent_id": "reporting_agent", "name": "Reporting", "role": "PM-facing research memo", "staffing_status": "Active", "state": "Completed",
+      "task": "pm-mandate-004.round-4.reporting", "input": {"approved_candidate_count": 1}, "output": {"output_id": "report-004"},
+      "start_time": "2026-08-14T10:09:14+00:00", "end_time": "2026-08-14T10:10:32+00:00", "next_step": "pm_decision", "error_message": null,
+      "metrics": {"task_completion_time": "0:01:18", "success_rate": "N/A", "api_cost": "N/A", "retry_count": "N/A", "failed_count": "N/A"},
+      "package": {"output_id": "report-004", "strategy_memo_reference": "Technical strategy approved after Risk review.", "comparison": {"candidates": ["technical-004", "quant-004"]}}
+    }
+  },
+  "summary_metrics": {"research_completion_time": "N/A", "total_api_cost": "N/A", "active_agents": 4},
+  "risk_review": {"approved_candidate_ids": ["technical-004"], "decisions": [{"candidate_id": "technical-004", "verdict": "approved"}, {"candidate_id": "quant-004", "verdict": "vetoed"}]},
+  "risk_failure": {},
+  "reporting": {"output_id": "report-004", "strategy_memo_reference": "Technical strategy approved after Risk review.", "comparison": {"candidates": ["technical-004", "quant-004"]}},
+  "reporting_failure": {}, "pm_decision": {},
+  "memory": {"record_id": "memory-004", "context": null}, "operational_events": []
+}
