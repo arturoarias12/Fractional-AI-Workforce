@@ -32,9 +32,10 @@ After the first-time setup, the final command in the matching section is all tha
 
 ## What the prototype demonstrates
 
-- A PM Research Request form with the four intake fields in the shared schema:
-  investment objective, risk tolerance, time horizon, and constraints. In
-  interactive demo mode it creates a simulated `pm_mandate` before research can start.
+- A controlled PM Research Request form that builds a schema-valid
+  `PMMandate`: objective, risk profile, horizon, as-of date, permitted universe,
+  prohibited assets, leverage and short-selling constraints, risk limits, and
+  optional PM notes. It also shows the exact top-level `WorkflowInput` handoff.
 - Current lifecycle state, task, input, output, timing, next step and error field for each agent.
 - The complete per-agent productivity metrics defined in the schema: task completion time, success rate, API cost, retry count and failed count.
 - A summary of the current research round on the dashboard.
@@ -55,9 +56,10 @@ read-only: PM decisions and staffing controls stay in the workflow, then appear
 in the dashboard after a new export.
 
 For the final integrated version, submitting the PM Research Request should call
-the orchestration team's create-run/submit-mandate function. That function
-creates the real `pm_mandate`, assigns active traders, and exports an updated
-snapshot whenever the workflow reaches a meaningful state transition.
+the orchestration team's create-run/submit-mandate function with the displayed
+`WorkflowInput`. That function validates the `PMMandate`, assigns active traders,
+and exports an updated snapshot whenever the workflow reaches a meaningful state
+transition. The dashboard deliberately does not call individual trader files.
 
 To export a graph result that has already been saved as JSON:
 

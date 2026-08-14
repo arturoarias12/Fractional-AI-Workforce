@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from uuid import uuid4
 
 import streamlit as st
 
@@ -47,13 +48,16 @@ st.markdown(
 )
 
 
-PM_MANDATE = {
-    "objective": "Find a moderate-risk ETF strategy with broad diversification.",
-    "risk": "Moderate",
-    "constraint": "Avoid high concentration and use the 120-ETF universe.",
-}
-
 RISK_OPTIONS = ["Conservative", "Moderate", "Growth"]
+OBJECTIVE_OPTIONS = [
+    "Evaluate diversified ETF strategies for risk-adjusted return.",
+    "Compare technical and quantitative ETF strategy candidates.",
+    "Identify a moderate-risk ETF strategy with broad diversification.",
+]
+UNIVERSE_OPTIONS = {
+    "Core liquid ETF pilot": ["SPY", "QQQ", "IWM", "EFA", "EEM", "TLT"],
+    "Sector ETF pilot": ["XLK", "XLF", "XLV", "XLE", "XLY", "XLP"],
+}
 
 
 def make_agents(phase: str, staffing: dict[str, str] | None = None) -> dict[str, dict]:
@@ -213,38 +217,79 @@ def display_value(value: Any) -> None:
         st.write(value if value not in (None, "") else "N/A")
 
 
+def workflow_input_for_demo() -> dict[str, Any] | None:
+    """Create the exact top-level input shape expected by the graph."""
+
+    mandate = st.session_state.pm_mandate
+    if not mandate:
+        return None
+    return {
+        "pm_mandate": mandate,
+        "active_specialists": [
+            "technical_trader_agent",
+            "fundamental_trader_agent",
+            "quant_trader_agent",
+            "risk_agent",
+            "reporting_agent",
+        ],
+        "run_id": mandate["workflow_id"],
+        "canonical_universe_id": None,
+        "evaluation_policy_id": None,
+    }
+
+
 @st.dialog("Create PM Research Request")
 def pm_request_dialog() -> None:
-    """Collect the four PM intake fields defined in the shared schema."""
+    """Collect a controlled, graph-valid PMMandate payload."""
 
-    st.caption("This creates a simulated mandate in demo mode. It does not call an agent.")
+    st.caption("The form creates a PMMandate-shaped payload. Demo mode does not yet invoke the graph.")
     with st.form("pm-research-request"):
-        objective = st.text_area(
+        objective = st.selectbox(
             "Investment objective *",
-            value=(st.session_state.pm_mandate or {}).get("objective", PM_MANDATE["objective"]),
-            help="What should the research round try to achieve?",
+            OBJECTIVE_OPTIONS,
+            help="Controlled options keep the request reliable for all research agents.",
         )
         risk = st.selectbox(
-            "Risk tolerance *", RISK_OPTIONS,
-            index=RISK_OPTIONS.index((st.session_state.pm_mandate or {}).get("risk", PM_MANDATE["risk"])),
+            "Risk profile *", RISK_OPTIONS, index=1,
         )
-        horizon = st.text_input(
-            "Time horizon *",
-            value=(st.session_state.pm_mandate or {}).get("time_horizon", "Three months"),
+        horizon = st.selectbox(
+            "Investment horizon *", ["1 month", "3 months", "6 months"], index=1,
         )
-        constraints = st.text_area(
-            "Constraints *",
-            value=(st.session_state.pm_mandate or {}).get("constraint", PM_MANDATE["constraint"]),
+        as_of_date = st.date_input("As-of date *")
+        universe_name = st.selectbox(
+            "Permitted asset universe *", list(UNIVERSE_OPTIONS),
+            help="The pilot uses a small explicit ticker list. A later team service can resolve the full 120-ETF universe.",
+        )
+        prohibited = st.multiselect(
+            "Prohibited assets (optional)", ["Leveraged ETFs", "Inverse ETFs", "Crypto-linked ETFs"],
+        )
+        leverage = st.selectbox(
+            "Leverage constraint *", ["No leverage", "Maximum 1.25x gross exposure"],
+        )
+        short_selling = st.selectbox(
+            "Short-selling constraint *", ["Long only", "Short selling not permitted in this pilot"],
+        )
+        notes = st.text_area(
+            "PM notes (optional)",
+            placeholder="Optional context for the research team; avoid putting new rules here.",
         )
         submitted = st.form_submit_button("Create Mandate", type="primary", use_container_width=True)
 
     if submitted:
-        if not all(value.strip() for value in [objective, horizon, constraints]):
-            st.error("Please complete the required fields before creating the mandate.")
-            return
+        workflow_id = f"dashboard-demo-{uuid4().hex[:8]}"
         st.session_state.pm_mandate = {
-            "objective": objective.strip(), "risk": risk, "time_horizon": horizon.strip(),
-            "constraint": constraints.strip(), "submitted_at": datetime.now().isoformat(timespec="seconds"),
+            "workflow_id": workflow_id,
+            "task_id": f"pm-mandate-round-{st.session_state.round_number}",
+            "as_of_date": as_of_date.isoformat(),
+            "investment_objective": objective,
+            "risk_profile": risk,
+            "investment_horizon": horizon,
+            "permitted_asset_universe": UNIVERSE_OPTIONS[universe_name],
+            "prohibited_assets": prohibited,
+            "leverage_constraints": leverage,
+            "short_selling_constraints": short_selling,
+            "risk_limits": {"max_single_position_weight": 0.20},
+            "pm_notes": notes.strip() or None,
         }
         st.session_state.phase = "idle"
         st.session_state.pm_decision = None
@@ -346,6 +391,14 @@ def dashboard() -> None:
                 st.session_state.phase = "completed"
                 st.session_state.notice = "Simulated research round completed; Risk review and report are ready."
                 st.rerun()
+
+    if not snapshot and st.session_state.pm_mandate:
+        with st.expander("Integration handoff · WorkflowInput", expanded=False):
+            st.caption(
+                "This is the schema-valid payload the dashboard will send to the team's workflow runner. "
+                "It is shown for integration review; demo mode does not submit it yet."
+            )
+            st.json(workflow_input_for_demo())
 
     st.divider()
     st.markdown("#### Research Workflow")
