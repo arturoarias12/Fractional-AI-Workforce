@@ -1,14 +1,16 @@
-"""
-Manual exploration script (not a formal automated test, hence no `test_`
-prefix in the filename):
-Chains technical/fundamental/quant (mocked) -> risk -> reporting.
+"""Acceptance tests for the Reporting Agent.
 
-Location: tests/reporting_agent/manual_chain_check.py
-(sits alongside tests/risk_agent/)
+Manual end-to-end check for the Reporting Agent.
 
-Usage:
-    From the project root, with .venv activated, run:
-        python tests/reporting_agent/manual_chain_check.py
+Chains: technical/fundamental/quant -> risk -> reporting.
+
+Fakes settled technical/fundamental/quant trader packages the way the graph
+would deliver them, runs the real RiskAgentImpl to produce a genuine
+RiskReviewResponse, and feeds the surviving candidates into
+ReportingAgentImpl.report() so the full data flow can be inspected by eye.
+This is an exploratory script rather than an automated test - nothing here
+asserts anything, hence no `test_` prefix in the filename.
+
 """
 
 import asyncio
