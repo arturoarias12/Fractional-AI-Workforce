@@ -286,13 +286,7 @@ class _ExecutionWarningAccumulator:
                 f"first: {summary.first_timestamp.isoformat()}; "
                 f"last: {summary.last_timestamp.isoformat()}"
             )
-            if reason == "stale_close":
-                messages.append(
-                    f"Used the latest available close for {symbol} in "
-                    f"{summary.count} rebalance attempt(s) because no current "
-                    f"execution bar was available ({interval})."
-                )
-            elif reason == "missing_current_bar":
+            if reason == "missing_current_bar":
                 messages.append(
                     f"Skipped {summary.count} rebalance attempt(s) for "
                     f"{symbol} because no current execution bar was available "
@@ -368,9 +362,10 @@ class DeterministicBacktestEngine:
             warnings.extend(_requested_metric_warnings(request, metrics))
             warnings = _deduplicate(warnings)
 
+            execution_attempt_id = _execution_attempt_id(request)
             result = BacktestResult(
-                result_id=f"{request.request_id}.result",
-                execution_attempt_id=request.request_id,
+                result_id=f"{execution_attempt_id}.result",
+                execution_attempt_id=execution_attempt_id,
                 request_id=request.request_id,
                 candidate_id=request.candidate.candidate_id,
                 status=BacktestStatus.SUCCEEDED,
@@ -389,9 +384,10 @@ class DeterministicBacktestEngine:
             )
             return _with_ledger(request, result, bars, resolved.data_references)
         except Exception as exc:
+            execution_attempt_id = _execution_attempt_id(request)
             result = BacktestResult(
-                result_id=f"{request.request_id}.result",
-                execution_attempt_id=request.request_id,
+                result_id=f"{execution_attempt_id}.result",
+                execution_attempt_id=execution_attempt_id,
                 request_id=request.request_id,
                 candidate_id=request.candidate.candidate_id,
                 status=BacktestStatus.FAILED,
@@ -549,14 +545,6 @@ def _rebalance(
     execution_bars: dict[str, PriceBar] = {}
     for symbol in sorted(set(positions) | set(target_weights)):
         bar = current_bars.get(symbol)
-        if bar is None and assumptions.fill_price_field == "close":
-            bar = latest_bars.get(symbol)
-            if bar is not None:
-                execution_warnings.record(
-                    "stale_close",
-                    symbol,
-                    execution_timestamp,
-                )
         if bar is None:
             if abs(positions.get(symbol, 0.0)) > 1e-12 or abs(
                 target_weights.get(symbol, 0.0)
@@ -893,6 +881,10 @@ def _requested_metric_warnings(
             + "."
         )
     return tuple(warnings)
+
+
+def _execution_attempt_id(request: BacktestRequest) -> str:
+    return f"{request.request_id}.attempt-{request.lineage.attempt}"
 
 
 def _with_ledger(
