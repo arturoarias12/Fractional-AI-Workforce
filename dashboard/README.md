@@ -61,6 +61,11 @@ the orchestration team's create-run/submit-mandate function with the displayed
 and exports an updated snapshot whenever the workflow reaches a meaningful state
 transition. The dashboard deliberately does not call individual trader files.
 
+The local `src/integration/WorkflowRunner` now provides that boundary for an
+already compiled graph: `start_workflow(workflow_input)` and
+`resume_workflow(run_id, pm_decision)`. The orchestration owner still needs to
+construct the graph with the real agent nodes and a durable checkpointer.
+
 To export a graph result that has already been saved as JSON:
 
 ```bash
