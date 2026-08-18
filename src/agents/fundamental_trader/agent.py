@@ -200,6 +200,13 @@ class FundamentalTraderAgent:
             )
 
         candidate_spec = self._build_candidate(task, best)
+        # Declare a buy-and-hold benchmark on the traded ticker itself now
+        # that it's known - a same-terms baseline (identical period,
+        # universe, cost assumptions) for Risk's CP-6 check to compare
+        # against. Was previously omitted, which caused every candidate to
+        # be vetoed on CP-6 during full-loop integration testing - see
+        # docs/fundamental_trader.md.
+        plan_draft = plan_draft.model_copy(update={"benchmark": best.ticker})
         plan = BacktestPlan.from_draft(plan_draft, validation_split=split)
         backtest_request = BacktestRequest(
             request_id=f"{task.lineage.task_id}.backtest",
