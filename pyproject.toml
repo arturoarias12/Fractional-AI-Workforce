@@ -22,6 +22,9 @@ langgraph = [
 quant-demo = [
     "openpyxl>=3.1,<4",
 ]
+fundamental-demo = [
+    "openpyxl>=3.1,<4",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
