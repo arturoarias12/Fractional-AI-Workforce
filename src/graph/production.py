@@ -18,6 +18,11 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from pydantic import ValidationError
 
+from observability import (
+    node_terminal_event,
+    pm_decision_event,
+    staffing_event,
+)
 from protocols import (
     AgentExecutionState,
     AgentLifecycleRecord,
@@ -299,6 +304,17 @@ def _wrap_trader_node(
         if not _agent_is_active(state, trader_id):
             return {
                 output_key: None,
+                "operational_events": (
+                    staffing_event(
+                        workflow_id=mandate.workflow_id,
+                        round_number=round_number,
+                        task_id=mandate.task_id,
+                        agent_id=str(trader_id),
+                        stage=node_name,
+                        occurred_at=_utc_now(),
+                        hired=False,
+                    ),
+                ),
                 "trader_branches": {
                     str(trader_id): {
                         "trader_id": str(trader_id),
@@ -356,6 +372,35 @@ def _wrap_trader_node(
         package_json = package.model_dump(mode="json")
         return {
             output_key: package_json,
+            "operational_events": (
+                node_terminal_event(
+                    workflow_id=mandate.workflow_id,
+                    round_number=round_number,
+                    task_id=package.lineage.task_id,
+                    agent_id=str(trader_id),
+                    stage=node_name,
+                    started_at=started_at,
+                    ended_at=completed_at,
+                    succeeded=package.status is not RunStatus.FAILED,
+                    attempt=package.lineage.attempt,
+                    status=package.status.value,
+                    error_type=(
+                        package.failures[0].stage
+                        if package.status is RunStatus.FAILED and package.failures
+                        else None
+                    ),
+                    metadata={
+                        "package_id": package.package_id,
+                        "eligible_for_risk_review": package.eligible_for_risk_review,
+                        "candidate_id": package.candidate_id,
+                        "retryable": (
+                            package.failures[0].retryable
+                            if package.status is RunStatus.FAILED and package.failures
+                            else None
+                        ),
+                    },
+                ),
+            ),
             "trader_branches": {
                 str(trader_id): {
                     "trader_id": str(trader_id),
@@ -475,6 +520,7 @@ def _wrap_risk_node(node: GraphNode) -> GraphNode:
         request = RiskReviewRequest.model_validate(
             state.get("risk_review_request")
         )
+        risk_workflow_id, risk_round_number = _emission_ids(state)
         started_at = _utc_now()
         if not _agent_is_active(state, SpecialistId.RISK):
             message = (
@@ -483,6 +529,18 @@ def _wrap_risk_node(node: GraphNode) -> GraphNode:
             )
             return {
                 "risk_review_response": None,
+                "operational_events": (
+                    staffing_event(
+                        workflow_id=risk_workflow_id,
+                        round_number=risk_round_number,
+                        task_id=request.request_id,
+                        agent_id=str(SpecialistId.RISK),
+                        stage=RISK_NODE,
+                        occurred_at=_utc_now(),
+                        hired=False,
+                        metadata={"blocks_progression": True},
+                    ),
+                ),
                 "risk_failure": _failure_record(
                     error_type="AgentInactive",
                     message=message,
@@ -521,6 +579,20 @@ def _wrap_risk_node(node: GraphNode) -> GraphNode:
             message = _bounded_exception_message(exc)
             return {
                 "risk_review_response": None,
+                "operational_events": (
+                    node_terminal_event(
+                        workflow_id=risk_workflow_id,
+                        round_number=risk_round_number,
+                        task_id=request.request_id,
+                        agent_id=str(SpecialistId.RISK),
+                        stage=RISK_NODE,
+                        started_at=started_at,
+                        ended_at=_utc_now(),
+                        succeeded=False,
+                        status=RunStatus.FAILED.value,
+                        error_type=type(exc).__name__,
+                    ),
+                ),
                 "risk_failure": _failure_record(
                     error_type=type(exc).__name__,
                     message=message,
@@ -543,6 +615,34 @@ def _wrap_risk_node(node: GraphNode) -> GraphNode:
 
         return {
             "risk_review_response": response.model_dump(mode="json"),
+            "operational_events": (
+                node_terminal_event(
+                    workflow_id=risk_workflow_id,
+                    round_number=risk_round_number,
+                    task_id=request.request_id,
+                    agent_id=str(SpecialistId.RISK),
+                    stage=RISK_NODE,
+                    started_at=started_at,
+                    ended_at=_utc_now(),
+                    succeeded=True,
+                    status=RunStatus.COMPLETED.value,
+                    metadata={
+                        "response_id": response.response_id,
+                        # The Risk verdict split is what a risk-approval reading
+                        # of "Success %" would be computed from; recording it
+                        # here keeps that reading available without the harness
+                        # having to re-parse the whole review response.
+                        "reviewed_candidate_ids": [
+                            decision.candidate_id
+                            for decision in response.decisions
+                        ],
+                        "approved_candidate_ids": list(
+                            response.approved_candidate_ids()
+                        ),
+                        "blocked_progression": response.blocked_progression,
+                    },
+                ),
+            ),
             "risk_failure": None,
             "surviving_candidate_ids": response.approved_candidate_ids(),
             "agent_lifecycle": {
@@ -632,6 +732,7 @@ def _wrap_reporting_node(node: GraphNode) -> GraphNode:
         request = ReportingRequest.model_validate(
             state.get("reporting_request")
         )
+        report_workflow_id, report_round_number = _emission_ids(state)
         started_at = _utc_now()
         if not _agent_is_active(state, SpecialistId.REPORTING):
             message = (
@@ -640,6 +741,17 @@ def _wrap_reporting_node(node: GraphNode) -> GraphNode:
             )
             return {
                 "reporting_output": None,
+                "operational_events": (
+                    staffing_event(
+                        workflow_id=report_workflow_id,
+                        round_number=report_round_number,
+                        task_id=request.request_id,
+                        agent_id=str(SpecialistId.REPORTING),
+                        stage=REPORTING_NODE,
+                        occurred_at=_utc_now(),
+                        hired=False,
+                    ),
+                ),
                 "reporting_failure": _failure_record(
                     error_type="AgentInactive",
                     message=message,
@@ -680,6 +792,20 @@ def _wrap_reporting_node(node: GraphNode) -> GraphNode:
             message = _bounded_exception_message(exc)
             return {
                 "reporting_output": None,
+                "operational_events": (
+                    node_terminal_event(
+                        workflow_id=report_workflow_id,
+                        round_number=report_round_number,
+                        task_id=request.request_id,
+                        agent_id=str(SpecialistId.REPORTING),
+                        stage=REPORTING_NODE,
+                        started_at=started_at,
+                        ended_at=_utc_now(),
+                        succeeded=False,
+                        status=RunStatus.FAILED.value,
+                        error_type=type(exc).__name__,
+                    ),
+                ),
                 "reporting_failure": _failure_record(
                     error_type=type(exc).__name__,
                     message=message,
@@ -702,6 +828,25 @@ def _wrap_reporting_node(node: GraphNode) -> GraphNode:
 
         return {
             "reporting_output": output.model_dump(mode="json"),
+            "operational_events": (
+                node_terminal_event(
+                    workflow_id=report_workflow_id,
+                    round_number=report_round_number,
+                    task_id=request.request_id,
+                    agent_id=str(SpecialistId.REPORTING),
+                    stage=REPORTING_NODE,
+                    started_at=started_at,
+                    ended_at=_utc_now(),
+                    succeeded=True,
+                    status=RunStatus.COMPLETED.value,
+                    metadata={
+                        "output_id": output.output_id,
+                        "surviving_candidate_ids": list(
+                            output.surviving_candidate_ids
+                        ),
+                    },
+                ),
+            ),
             "reporting_failure": None,
             "agent_lifecycle": {
                 str(SpecialistId.REPORTING): _lifecycle(
@@ -813,6 +958,20 @@ def human_pm_decision_node(state: Mapping[str, Any]) -> Mapping[str, Any]:
     now = _utc_now()
     return {
         "pm_decision": decision.model_dump(mode="json"),
+        "operational_events": (
+            pm_decision_event(
+                workflow_id=workflow_id,
+                round_number=round_number,
+                task_id=decision.decision_id,
+                stage=PM_DECISION_NODE,
+                occurred_at=now,
+                decision=decision.decision.value,
+                metadata={
+                    "selected_candidate_id": decision.selected_candidate_id,
+                    "surviving_candidate_ids": list(surviving_ids),
+                },
+            ),
+        ),
         "pending_human_action": None,
         "agent_lifecycle": {
             PORTFOLIO_MANAGER_ID: _lifecycle(
@@ -1120,6 +1279,21 @@ def _positive_limit(value: Any) -> int:
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _emission_ids(state: Mapping[str, Any]) -> tuple[str, int]:
+    """Resolve the workflow identity and round an event belongs to.
+
+    ``workflow_id`` is written into state by ``_prepare_round``, so every node
+    downstream of it can read the same value the mandate carries.  Falling back
+    to the mandate keeps emission working for any node that runs before that,
+    rather than silently attributing events to an empty workflow.
+    """
+
+    workflow_id = str(state.get("workflow_id", "")).strip()
+    if not workflow_id:
+        workflow_id = _mandate_from_state(state).workflow_id
+    return workflow_id, _positive_round_number(state.get("round_number", 1))
 
 
 __all__ = [
