@@ -55,6 +55,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from protocols import (  # noqa: E402
     BacktestRequest,
@@ -90,6 +91,8 @@ from agents.quant_trader import (  # noqa: E402
 from agents.risk_agent import RiskAgentImpl, make_risk_review_node  # noqa: E402
 from agents.reporting_agent import ReportingAgentImpl  # noqa: E402
 from protocols.reporting import ReportingRequest  # noqa: E402
+from dashboard.workflow_adapter import write_dashboard_snapshot  # noqa: E402
+from integration import WorkflowRunner  # noqa: E402
 
 langgraph_missing = False
 try:
@@ -415,10 +418,15 @@ async def main() -> None:
     print(f"  Scripted: PM intake/decision, Memory read/write")
     print()
 
-    final_state = await compiled.ainvoke(
-        {"pm_mandate": mandate.model_dump(mode="json"), "run_id": RUN_ID},
-        config={"configurable": {"thread_id": "full-loop-demo"}},
+    runner = WorkflowRunner(
+        compiled_graph=compiled,
+        snapshot_writer=write_dashboard_snapshot,
     )
+    final_state = await runner.start_workflow(
+        {"pm_mandate": mandate.model_dump(mode="json"), "run_id": RUN_ID},
+        publish_progress=True,
+    )
+    print("Dashboard snapshot written to dashboard/data/workflow_snapshot.json")
 
     print("=== Trader packages ===")
     for key in ("technical_trader_package", "fundamental_trader_package", "quant_trader_package"):

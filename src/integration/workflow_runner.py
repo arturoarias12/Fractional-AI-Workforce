@@ -9,6 +9,7 @@ start a run, resume a PM decision, and receive a snapshot after either action.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
+from inspect import isawaitable
 from typing import Any
 
 from protocols import PMDecision, PMMandate
@@ -25,19 +26,25 @@ class WorkflowRunner:
         self._snapshot_writer = snapshot_writer
 
     async def start_workflow(
-        self, workflow_input: Mapping[str, Any]
+        self, workflow_input: Mapping[str, Any], *, publish_progress: bool = True
     ) -> Mapping[str, Any]:
-        """Validate dashboard input, start a graph run, and publish its state."""
+        """Validate dashboard input, start a graph run, and publish its state.
+
+        LangGraph's checkpoint state is published after every node update when
+        the compiled graph supports streaming. This is what lets a polling
+        dashboard show lifecycle transitions instead of only the final result.
+        """
 
         payload = dict(workflow_input)
         mandate = PMMandate.model_validate(payload.get("pm_mandate"))
         payload["pm_mandate"] = mandate.model_dump(mode="json")
         payload.setdefault("run_id", mandate.workflow_id)
 
-        state = await self._compiled_graph.ainvoke(
-            payload,
-            config=self._config_for(str(payload["run_id"])),
-        )
+        config = self._config_for(str(payload["run_id"]))
+        if publish_progress and hasattr(self._compiled_graph, "astream"):
+            return await self._stream_and_publish(payload, config=config)
+
+        state = await self._compiled_graph.ainvoke(payload, config=config)
         await self._publish_snapshot(state)
         return state
 
@@ -70,5 +77,34 @@ class WorkflowRunner:
 
     async def _publish_snapshot(self, state: Mapping[str, Any]) -> None:
         result = self._snapshot_writer(state)
-        if hasattr(result, "__await__"):
+        if isawaitable(result):
             await result
+
+    async def _stream_and_publish(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        config: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        """Publish each checkpoint while preserving the graph's final state."""
+
+        latest: Mapping[str, Any] = {}
+        async for _update in self._compiled_graph.astream(
+            payload,
+            config=config,
+            stream_mode="updates",
+        ):
+            checkpoint = await self._compiled_graph.aget_state(config)
+            values = getattr(checkpoint, "values", checkpoint)
+            if isinstance(values, Mapping):
+                latest = values
+                await self._publish_snapshot(latest)
+
+        if not latest:
+            checkpoint = await self._compiled_graph.aget_state(config)
+            values = getattr(checkpoint, "values", checkpoint)
+            if isinstance(values, Mapping):
+                latest = values
+        if latest:
+            await self._publish_snapshot(latest)
+        return latest

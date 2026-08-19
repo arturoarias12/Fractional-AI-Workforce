@@ -66,6 +66,23 @@ already compiled graph: `start_workflow(workflow_input)` and
 `resume_workflow(run_id, pm_decision)`. The orchestration owner still needs to
 construct the graph with the real agent nodes and a durable checkpointer.
 
+## Live-workflow pilot (PR #6)
+
+The PR #6 integration demo now uses `WorkflowRunner` and writes a new dashboard
+snapshot after each graph checkpoint. To run it, first install the project
+extras and place the team fixture files `ETF_historical_prices.xlsx` and
+`ETF_info.xlsx` in the repository root:
+
+```bash
+pip install -e '.[langgraph,fundamental-demo,quant-demo]'
+python scripts/run_full_research_loop_demo.py
+```
+
+Open the Streamlit dashboard, select **Workflow snapshot**, and use **Refresh
+live snapshot** while the script is running. In this pilot, Fundamental, Quant,
+Risk, and Reporting are real graph nodes; Technical remains a clearly labeled
+stub because the repository does not yet provide a concrete `ModelClient`.
+
 To export a graph result that has already been saved as JSON:
 
 ```bash

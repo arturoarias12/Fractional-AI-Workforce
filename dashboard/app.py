@@ -337,6 +337,9 @@ def show_header() -> None:
     if selected == "Workflow snapshot":
         action.markdown("<div style='padding-top:1.1rem'>🟩 Snapshot mode</div>", unsafe_allow_html=True)
         st.markdown("<div class='demo-note'>Workflow snapshot · Read-only data exported from WorkflowState. Missing operational events remain N/A.</div>", unsafe_allow_html=True)
+        if st.sidebar.button("Refresh live snapshot", use_container_width=True):
+            st.rerun()
+        st.sidebar.caption("While the workflow runner is active, use Refresh to load the latest exported lifecycle state.")
     else:
         action.markdown("<div style='padding-top:1.1rem'>🟦 Demo mode</div>", unsafe_allow_html=True)
         st.markdown("<div class='demo-note'>Interactive demo · Workflow activity, metrics, and decisions use simulated data.</div>", unsafe_allow_html=True)
