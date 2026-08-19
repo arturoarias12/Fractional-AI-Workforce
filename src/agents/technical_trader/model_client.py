@@ -1,9 +1,9 @@
 """Provider-neutral model, usage, and metrics interfaces.
 
-Concrete adapters (OpenAI, Azure OpenAI, Anthropic, and others) implement
-``ModelClient`` outside the agents. Every call returns both structured content
-and normalized usage metadata. The base agent records a separate operational
-event through ``MetricsSink``; financial outputs remain free of telemetry.
+Concrete adapters implement ``ModelClient`` outside the reasoning classes.
+Every call returns both structured content and normalized usage metadata. The
+base agent records a separate operational event through ``MetricsSink``;
+financial outputs remain free of telemetry.
 """
 
 from __future__ import annotations

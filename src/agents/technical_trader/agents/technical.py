@@ -8,6 +8,7 @@ from ..benchmark import BenchmarkSelectionPolicy
 from ..execution import ExecutionPolicy
 from ..model_client import MetricsSink, ModelClient
 from ..prompts import (
+    DEFAULT_CANDIDATE_PROMPT_ASSETS,
     TECHNICAL_LENS_REQUIREMENTS,
     TECHNICAL_TRADER_SYSTEM_PROMPT,
 )
@@ -31,9 +32,11 @@ class TechnicalTraderAgent(StagedTraderAgent):
         data_service: DataService,
         backtest_engine: BacktestEngine,
         available_executors: Sequence[str],
-        validation_split_policy: ValidationSplitPolicy | None = None,
+        validation_split_policy: ValidationSplitPolicy,
         technical_input_adapter: TechnicalAnalysisInputAdapter | None = None,
         technical_toolkit: TechnicalAnalysisToolkit | None = None,
+        benchmark_symbol: str | None = None,
+        candidate_prompt_max_assets: int = DEFAULT_CANDIDATE_PROMPT_ASSETS,
         benchmark_selection_policy: BenchmarkSelectionPolicy | None = None,
         metrics_sink: MetricsSink | None = None,
         execution_policy: ExecutionPolicy | None = None,
@@ -57,6 +60,8 @@ class TechnicalTraderAgent(StagedTraderAgent):
             ),
             system_prompt=TECHNICAL_TRADER_SYSTEM_PROMPT,
             lens_requirements=TECHNICAL_LENS_REQUIREMENTS,
+            benchmark_symbol=benchmark_symbol,
+            candidate_prompt_max_assets=candidate_prompt_max_assets,
             benchmark_selection_policy=benchmark_selection_policy,
             metrics_sink=metrics_sink,
             execution_policy=execution_policy,

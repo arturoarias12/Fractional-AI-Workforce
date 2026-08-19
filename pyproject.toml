@@ -22,6 +22,10 @@ langgraph = [
 quant-demo = [
     "openpyxl>=3.1,<4",
 ]
+technical-models = [
+    "openai>=2.15,<3",
+    "anthropic>=0.100,<0.101",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

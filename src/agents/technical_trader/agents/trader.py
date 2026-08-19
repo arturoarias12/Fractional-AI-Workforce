@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from protocols import (
     BacktestInterpretationDraft,
     BacktestPlan,
+    BacktestPlanDraft,
     BacktestRequest,
     BacktestResult,
     BacktestStatus,
@@ -31,6 +32,7 @@ from protocols import (
     TraderResearchPlanDraft,
     TraderStrategyPackage,
     TraderTask,
+    ValidationSplit,
 )
 
 from ..errors import (
@@ -71,6 +73,11 @@ from ..models.technical_analysis import (
     TechnicalAnalysisReport,
 )
 from ..prompts import (
+    CandidatePromptScope,
+    DEFAULT_CANDIDATE_PROMPT_ASSETS,
+    MAX_CANDIDATE_PROMPT_ASSETS,
+    MIN_CANDIDATE_PROMPT_ASSETS,
+    compact_horizon_technical_report,
     render_backtest_interpretation,
     render_candidate_proposal,
     render_candidate_review,
@@ -98,15 +105,22 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         data_service: DataService,
         backtest_engine: BacktestEngine,
         available_executors: Sequence[str],
-        validation_split_policy: ValidationSplitPolicy | None,
+        validation_split_policy: ValidationSplitPolicy,
         technical_input_adapter: TechnicalAnalysisInputAdapter,
         technical_toolkit: TechnicalAnalysisToolkit,
         system_prompt: str,
         lens_requirements: tuple[str, ...],
+        benchmark_symbol: str | None = None,
+        candidate_prompt_max_assets: int = DEFAULT_CANDIDATE_PROMPT_ASSETS,
         benchmark_selection_policy: BenchmarkSelectionPolicy | None = None,
         metrics_sink: MetricsSink | None = None,
         execution_policy: ExecutionPolicy | None = None,
     ) -> None:
+        if validation_split_policy is None:
+            raise ValueError(
+                "validation_split_policy is required; the Technical Trader "
+                "must use the shared code-owned evaluation window."
+            )
         self._execution_policy = execution_policy or ExecutionPolicy()
         super().__init__(
             agent_id=agent_id,
@@ -144,6 +158,23 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             benchmark_selection_policy or BenchmarkSelectionPolicy()
         )
         self._validation_split_policy = validation_split_policy
+        self._benchmark_symbol = (
+            benchmark_symbol.strip()
+            if benchmark_symbol is not None and benchmark_symbol.strip()
+            else None
+        )
+        if (
+            isinstance(candidate_prompt_max_assets, bool)
+            or not MIN_CANDIDATE_PROMPT_ASSETS
+            <= candidate_prompt_max_assets
+            <= MAX_CANDIDATE_PROMPT_ASSETS
+        ):
+            raise ValueError(
+                "candidate_prompt_max_assets must be from "
+                f"{MIN_CANDIDATE_PROMPT_ASSETS} through "
+                f"{MAX_CANDIDATE_PROMPT_ASSETS}."
+            )
+        self._candidate_prompt_max_assets = int(candidate_prompt_max_assets)
         self._technical_input_adapter = technical_input_adapter
         self._technical_toolkit = technical_toolkit
         self._system_prompt = system_prompt
@@ -172,6 +203,9 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         data_request: DataRequest | None = None
         data_response: DataResponse | None = None
         technical_analysis: TechnicalAnalysisReport | None = None
+        validation_split: ValidationSplit | None = None
+        candidate_prompt_report: dict[str, Any] | None = None
+        candidate_prompt_scope: CandidatePromptScope | None = None
         candidate_rule: CandidateRuleSpecification | None = None
         backtest_request: BacktestRequest | None = None
         backtest_result: BacktestResult | None = None
@@ -256,6 +290,17 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                 technical_analysis,
                 resolve_technical_horizon(request.mandate),
             )
+            validation_split = self._resolve_validation_split(
+                request=request,
+                data_response=data_response,
+            )
+            candidate_prompt_report = compact_horizon_technical_report(
+                technical_analysis.model_dump(mode="json"),
+                max_assets=self._candidate_prompt_max_assets,
+            )
+            candidate_prompt_scope = CandidatePromptScope.from_compacted_report(
+                candidate_prompt_report
+            )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -271,6 +316,10 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         review_failures: list[TraderFailure] = []
         candidate_review_applied = False
         try:
+            if candidate_prompt_report is None or candidate_prompt_scope is None:
+                raise ServiceContractError(
+                    "Technical candidate prompt scope was not prepared."
+                )
             initial_proposal = await self._generate_structured(
                 system_prompt=self._system_prompt,
                 user_prompt=render_candidate_proposal(
@@ -279,13 +328,21 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                     technical_analysis=technical_analysis,
                     lens_requirements=self._lens_requirements,
                     available_executors=self._model_selectable_executors,
+                    validation_split=validation_split,
+                    required_benchmark=self._benchmark_symbol,
+                    max_prompt_assets=self._candidate_prompt_max_assets,
+                    candidate_prompt_report=candidate_prompt_report,
                 ),
                 response_model=CandidateProposalDraft,
                 context=self._model_context(request, "propose_candidate"),
             )
+            self._validate_candidate_prompt_scope(
+                initial_proposal,
+                candidate_prompt_scope,
+            )
             proposal = initial_proposal
             try:
-                proposal = await self._generate_structured(
+                reviewed_proposal = await self._generate_structured(
                     system_prompt=self._system_prompt,
                     user_prompt=render_candidate_review(
                         mandate=request.mandate,
@@ -295,14 +352,29 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                         available_executors=(
                             self._model_selectable_executors
                         ),
+                        validation_split=validation_split,
+                        required_benchmark=self._benchmark_symbol,
+                        max_prompt_assets=self._candidate_prompt_max_assets,
+                        candidate_prompt_report=candidate_prompt_report,
                     ),
                     response_model=CandidateProposalDraft,
                     context=self._model_context(request, "review_candidate"),
                 )
-                candidate_review_applied = True
+                (
+                    proposal,
+                    candidate_review_applied,
+                    review_validation_error,
+                ) = self._select_reviewed_candidate(
+                    initial_proposal=initial_proposal,
+                    reviewed_proposal=reviewed_proposal,
+                    scope=candidate_prompt_scope,
+                )
+                if review_validation_error is not None:
+                    raise review_validation_error
             except asyncio.CancelledError:
                 raise
             except Exception as review_exc:
+                proposal = initial_proposal
                 review_failures.append(
                     TraderFailure(
                         stage="candidate_review",
@@ -323,6 +395,7 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                         data_response=data_response,
                         technical_analysis=technical_analysis,
                         proposal=proposal,
+                        validation_split=validation_split,
                     )
                 )
             except Exception as review_validation_exc:
@@ -349,6 +422,7 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                     data_response=data_response,
                     technical_analysis=technical_analysis,
                     proposal=proposal,
+                    validation_split=validation_split,
                 )
         except asyncio.CancelledError:
             raise
@@ -793,6 +867,118 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             provenance_required=True,
         )
 
+    def _resolve_validation_split(
+        self,
+        *,
+        request: TraderTask,
+        data_response: DataResponse,
+    ) -> ValidationSplit:
+        provisional_plan = BacktestPlanDraft(
+            requested_end_date=request.mandate.as_of_date,
+            frequency="daily",
+            benchmark=self._benchmark_symbol,
+            requested_metrics=[self._benchmark_selection_policy.metric_name],
+            validation_requirements=[
+                "held_out_out_of_sample_test",
+                "horizon_matched_evaluation",
+            ],
+            held_out_evaluation_required=True,
+        )
+        validation_split = self._validation_split_policy.resolve(
+            task=request,
+            plan=provisional_plan,
+            data_response=data_response,
+        )
+        if not isinstance(validation_split, ValidationSplit):
+            try:
+                validation_split = ValidationSplit.model_validate(
+                    validation_split
+                )
+            except ValidationError as exc:
+                raise ServiceContractError(
+                    "ValidationSplitPolicy returned an invalid split: "
+                    f"{exc}"
+                ) from exc
+        try:
+            validate_horizon_evaluation_window(
+                request.mandate,
+                test_start_date=validation_split.test_start_date,
+                test_end_date=validation_split.test_end_date,
+            )
+        except ValueError as exc:
+            raise ServiceContractError(str(exc)) from exc
+        return validation_split
+
+    def _normalize_candidate_backtest_plan(
+        self,
+        proposal: CandidateProposalDraft,
+        *,
+        validation_split: ValidationSplit,
+    ) -> CandidateProposalDraft:
+        benchmark = self._benchmark_symbol or proposal.backtest_plan.benchmark
+        if benchmark is None or not benchmark.strip():
+            raise ServiceContractError(
+                "Technical benchmark selection requires an injected or "
+                "model-declared benchmark symbol."
+            )
+        normalized_plan = proposal.backtest_plan.model_copy(
+            update={
+                "requested_start_date": validation_split.test_start_date,
+                "requested_end_date": validation_split.test_end_date,
+                "frequency": "daily",
+                "benchmark": benchmark.strip(),
+                "requested_metrics": list(
+                    dict.fromkeys(
+                        [
+                            *proposal.backtest_plan.requested_metrics,
+                            self._benchmark_selection_policy.metric_name,
+                        ]
+                    )
+                ),
+                "validation_requirements": list(
+                    dict.fromkeys(
+                        [
+                            *proposal.backtest_plan.validation_requirements,
+                            "held_out_out_of_sample_test",
+                            "horizon_matched_evaluation",
+                        ]
+                    )
+                ),
+                "held_out_evaluation_required": True,
+            }
+        )
+        return proposal.model_copy(update={"backtest_plan": normalized_plan})
+
+    @staticmethod
+    def _validate_candidate_prompt_scope(
+        proposal: CandidateProposalDraft,
+        scope: CandidatePromptScope,
+    ) -> None:
+        try:
+            scope.validate_proposal(proposal)
+        except ValueError as exc:
+            raise AgentOutputValidationError(str(exc)) from exc
+
+    @classmethod
+    def _select_reviewed_candidate(
+        cls,
+        *,
+        initial_proposal: CandidateProposalDraft,
+        reviewed_proposal: CandidateProposalDraft,
+        scope: CandidatePromptScope,
+    ) -> tuple[
+        CandidateProposalDraft,
+        bool,
+        AgentOutputValidationError | None,
+    ]:
+        """Use a reviewed draft only after its exact prompt scope validates."""
+
+        try:
+            cls._validate_candidate_prompt_scope(reviewed_proposal, scope)
+        except AgentOutputValidationError as exc:
+            return initial_proposal, False, exc
+        return reviewed_proposal, True, None
+
     def _build_candidate_and_backtest(
         self,
         *,
@@ -801,7 +987,12 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         data_response: DataResponse,
         technical_analysis: TechnicalAnalysisReport,
         proposal: CandidateProposalDraft,
+        validation_split: ValidationSplit,
     ) -> tuple[CandidateRuleSpecification, BacktestRequest]:
+        proposal = self._normalize_candidate_backtest_plan(
+            proposal,
+            validation_split=validation_split,
+        )
         proposal = self._bind_evidence_derived_parameters(
             proposal=proposal,
             technical_analysis=technical_analysis,
@@ -822,27 +1013,6 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             trader_id=self.trader_id,
             lineage=candidate_lineage,
         )
-        validation_split = None
-        if proposal.backtest_plan.held_out_evaluation_required:
-            if self._validation_split_policy is None:
-                raise ServiceContractError(
-                    "Held-out evaluation requires an injected shared "
-                    "ValidationSplitPolicy; the Technical Trader does not "
-                    "choose its own test window."
-                )
-            validation_split = self._validation_split_policy.resolve(
-                task=request,
-                plan=proposal.backtest_plan,
-                data_response=data_response,
-            )
-            try:
-                validate_horizon_evaluation_window(
-                    request.mandate,
-                    test_start_date=validation_split.test_start_date,
-                    test_end_date=validation_split.test_end_date,
-                )
-            except ValueError as exc:
-                raise ServiceContractError(str(exc)) from exc
         plan = BacktestPlan.from_draft(
             proposal.backtest_plan,
             validation_split=validation_split,

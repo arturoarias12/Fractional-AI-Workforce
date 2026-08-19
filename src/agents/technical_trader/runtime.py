@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from math import isfinite
 from typing import Any
 
 from pydantic import ValidationError
@@ -26,6 +27,7 @@ from .benchmark import BenchmarkSelectionPolicy
 from .errors import MandateValidationError
 from .execution import ExecutionPolicy
 from .model_client import MetricsSink, ModelClient
+from .prompts import DEFAULT_CANDIDATE_PROMPT_ASSETS
 from .services import BacktestEngine, DataService, ValidationSplitPolicy
 from .tools import TechnicalAnalysisInputAdapter, TechnicalAnalysisToolkit
 
@@ -167,14 +169,17 @@ def create_technical_trader_runtime(
     data_service: DataService,
     backtest_engine: BacktestEngine,
     available_executors: Sequence[str],
-    validation_split_policy: ValidationSplitPolicy | None = None,
+    validation_split_policy: ValidationSplitPolicy,
     technical_input_adapter: TechnicalAnalysisInputAdapter | None = None,
     technical_toolkit: TechnicalAnalysisToolkit | None = None,
+    benchmark_symbol: str | None = None,
+    candidate_prompt_max_assets: int = DEFAULT_CANDIDATE_PROMPT_ASSETS,
     benchmark_selection_policy: BenchmarkSelectionPolicy | None = None,
     metrics_sink: MetricsSink | None = None,
     execution_policy: ExecutionPolicy | None = None,
 ) -> TechnicalTraderRuntime:
     policy = execution_policy or ExecutionPolicy()
+    _validate_model_client_deadline(model_client, policy)
     return TechnicalTraderRuntime(
         agent=TechnicalTraderAgent(
             model_client=model_client,
@@ -184,12 +189,47 @@ def create_technical_trader_runtime(
             validation_split_policy=validation_split_policy,
             technical_input_adapter=technical_input_adapter,
             technical_toolkit=technical_toolkit,
+            benchmark_symbol=benchmark_symbol,
+            candidate_prompt_max_assets=candidate_prompt_max_assets,
             benchmark_selection_policy=benchmark_selection_policy,
             metrics_sink=metrics_sink,
             execution_policy=policy,
         ),
         execution_policy=policy,
     )
+
+
+def _validate_model_client_deadline(
+    model_client: ModelClient,
+    execution_policy: ExecutionPolicy,
+) -> None:
+    """Reject a provider retry budget that its runtime would cancel early."""
+
+    minimum_timeout = getattr(
+        model_client,
+        "minimum_model_call_timeout_seconds",
+        None,
+    )
+    if minimum_timeout is None:
+        return
+    if (
+        isinstance(minimum_timeout, bool)
+        or not isinstance(minimum_timeout, (int, float))
+        or not isfinite(float(minimum_timeout))
+        or minimum_timeout <= 0
+    ):
+        raise ValueError(
+            "Model client's minimum_model_call_timeout_seconds must be a "
+            "positive finite number."
+        )
+    if minimum_timeout >= execution_policy.model_call_timeout_seconds:
+        raise ValueError(
+            "Model provider timeout/retry budget is incompatible with the "
+            "Technical Trader execution policy: the provider requires a "
+            f"model-call deadline greater than {minimum_timeout:g} seconds, "
+            "but the runtime is configured for "
+            f"{execution_policy.model_call_timeout_seconds:g} seconds."
+        )
 
 
 def make_langgraph_node(

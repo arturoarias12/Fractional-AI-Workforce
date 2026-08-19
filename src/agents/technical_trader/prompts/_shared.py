@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from typing import Any
 
 from pydantic import BaseModel
-from protocols import PMMandate
+from protocols import PMMandate, ValidationSplit
 
 from ..executors import render_executor_catalog
 from ..horizon import resolve_technical_horizon
+from .compaction import (
+    DEFAULT_CANDIDATE_PROMPT_ASSETS,
+    compact_horizon_technical_report,
+)
 
 
 SHARED_TRADER_BOUNDARY = """
@@ -83,10 +88,30 @@ def render_candidate_proposal(
     technical_analysis: BaseModel,
     lens_requirements: tuple[str, ...],
     available_executors: tuple[str, ...],
+    validation_split: ValidationSplit,
+    required_benchmark: str | None = None,
+    max_prompt_assets: int = DEFAULT_CANDIDATE_PROMPT_ASSETS,
+    candidate_prompt_report: Mapping[str, Any] | None = None,
 ) -> str:
     lens = "\n".join(f"- {item}" for item in lens_requirements)
     executors = render_executor_catalog(available_executors)
     horizon = resolve_technical_horizon(mandate).as_prompt_mapping()
+    prompt_report = (
+        dict(candidate_prompt_report)
+        if candidate_prompt_report is not None
+        else compact_horizon_technical_report(
+            technical_analysis.model_dump(mode="json"),
+            max_assets=max_prompt_assets,
+        )
+    )
+    benchmark_instruction = (
+        f"Use exactly `{required_benchmark}` as the benchmark."
+        if required_benchmark is not None
+        else (
+            "Select one PM-permitted benchmark and declare it explicitly; "
+            "a missing benchmark makes the candidate non-executable."
+        )
+    )
     return f"""
 Using only the supplied point-in-time Data Service summary and deterministic
 technical-analysis report, form one precise and codeable candidate strategy
@@ -104,7 +129,15 @@ model-authored values. For the multi-ETF Technical portfolio, cite the evidence
 IDs and omit code-owned anchor prices, moving-average windows, volume lookbacks,
 and pattern necklines; deterministic code resolves those values from the cited
 report before validation and execution.
+Every sleeve must exactly match one supplied horizon opportunity by symbol,
+child executor, and its complete evidence-ID set. Do not add or omit even an
+otherwise in-scope evidence ID, because the combination is the executable
+opportunity contract.
 Provide a Backtest Engine plan, but do not calculate or predict any result.
+The shared validation policy has already selected the exact held-out window:
+{_json(validation_split)}
+Set requested_start_date and requested_end_date to those exact dates, use daily
+frequency, and set held_out_evaluation_required=true. {benchmark_instruction}
 
 Compare instruments as potential sleeves. Do not reward an asset merely
 because it has more detected levels. Raw touch counts are not directly
@@ -149,7 +182,7 @@ Point-in-time Data Service response summary:
 {_json(_without_analysis_payload(data_response))}
 
 Deterministic Technical Analysis report:
-{_json(technical_analysis)}
+{_json(prompt_report)}
 """.strip()
 
 
@@ -160,10 +193,27 @@ def render_candidate_review(
     technical_analysis: BaseModel,
     lens_requirements: tuple[str, ...],
     available_executors: tuple[str, ...],
+    validation_split: ValidationSplit,
+    required_benchmark: str | None = None,
+    max_prompt_assets: int = DEFAULT_CANDIDATE_PROMPT_ASSETS,
+    candidate_prompt_report: Mapping[str, Any] | None = None,
 ) -> str:
     lens = "\n".join(f"- {item}" for item in lens_requirements)
     executors = render_executor_catalog(available_executors)
     horizon = resolve_technical_horizon(mandate).as_prompt_mapping()
+    prompt_report = (
+        dict(candidate_prompt_report)
+        if candidate_prompt_report is not None
+        else compact_horizon_technical_report(
+            technical_analysis.model_dump(mode="json"),
+            max_assets=max_prompt_assets,
+        )
+    )
+    benchmark_instruction = (
+        f"Keep exactly `{required_benchmark}` as the benchmark."
+        if required_benchmark is not None
+        else "Keep one explicit PM-permitted benchmark."
+    )
     return f"""
 Act as the second-pass Technical portfolio reviewer. Return a complete revised
 CandidateProposalDraft, not commentary. Preserve a valid initial proposal only
@@ -187,6 +237,10 @@ executor, Backtest Plan window, benchmark, costs, and implementation contracts
 valid. Every retained sleeve must exactly match a supplied opportunity by
 symbol, child executor, and evidence IDs.
 
+The code-owned held-out window is {_json(validation_split)}. Keep those exact
+requested start/end dates, daily frequency, and
+held_out_evaluation_required=true. {benchmark_instruction}
+
 Registered model-selectable executor:
 {executors}
 
@@ -203,7 +257,7 @@ Initial candidate proposal to challenge:
 {_json(initial_proposal)}
 
 Deterministic Technical Analysis report:
-{_json(technical_analysis)}
+{_json(prompt_report)}
 """.strip()
 
 

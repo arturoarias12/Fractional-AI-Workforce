@@ -2,6 +2,14 @@
 
 from . import models as _models
 from .agents import BaseAgent, StagedTraderAgent, TechnicalTraderAgent
+from .adapters import (
+    AnthropicTechnicalModelClient,
+    OpenAIOutputMode,
+    OpenAITechnicalModelClient,
+    TechnicalModelConfigurationError,
+    TechnicalModelProvider,
+    create_technical_model_client_from_env,
+)
 from .benchmark import BenchmarkComparison, BenchmarkSelectionPolicy
 from .errors import (
     AgentInputValidationError,
@@ -54,6 +62,12 @@ from .model_client import (
     ModelUsage,
     NullMetricsSink,
 )
+from .prompts import (
+    DEFAULT_CANDIDATE_PROMPT_ASSETS,
+    MAX_CANDIDATE_PROMPT_ASSETS,
+    MIN_CANDIDATE_PROMPT_ASSETS,
+    compact_horizon_technical_report,
+)
 from .models import *  # noqa: F403
 from .runtime import (
     TechnicalTraderRuntime,
@@ -80,6 +94,7 @@ __all__ = [
     "AgentInputValidationError",
     "AgentOutputValidationError",
     "AgentTimeoutError",
+    "AnthropicTechnicalModelClient",
     "ArtifactPayloadTechnicalInputAdapter",
     "BENCHMARK_FALLBACK_EXECUTOR_ID",
     "BacktestEngine",
@@ -87,6 +102,7 @@ __all__ = [
     "BenchmarkComparison",
     "BenchmarkSelectionPolicy",
     "DEFAULT_BACKTEST_TIMEOUT_SECONDS",
+    "DEFAULT_CANDIDATE_PROMPT_ASSETS",
     "DEFAULT_DATA_SERVICE_TIMEOUT_SECONDS",
     "DEFAULT_MODEL_CALL_TIMEOUT_SECONDS",
     "DEFAULT_TRADER_TIMEOUT_SECONDS",
@@ -100,6 +116,8 @@ __all__ = [
     "InMemoryMetricsSink",
     "MAX_TIMEOUT_SECONDS",
     "MAX_TRADER_TIMEOUT_SECONDS",
+    "MAX_CANDIDATE_PROMPT_ASSETS",
+    "MIN_CANDIDATE_PROMPT_ASSETS",
     "LONG_ONLY_TECHNICAL_EXECUTORS",
     "MOVING_AVERAGE_TREND_EXECUTOR_ID",
     "MULTI_ASSET_PORTFOLIO_EXECUTOR_ID",
@@ -114,6 +132,8 @@ __all__ = [
     "ModelTimeoutError",
     "ModelUsage",
     "NullMetricsSink",
+    "OpenAIOutputMode",
+    "OpenAITechnicalModelClient",
     "RESISTANCE_BREAKOUT_EXECUTOR_ID",
     "ROLLING_RESISTANCE_BREAKOUT_EXECUTOR_ID",
     "ROLLING_SUPPORT_REACTION_EXECUTOR_ID",
@@ -127,6 +147,8 @@ __all__ = [
     "TechnicalAnalysisInputAdapter",
     "TechnicalAnalysisInputError",
     "TechnicalAnalysisToolkit",
+    "TechnicalModelConfigurationError",
+    "TechnicalModelProvider",
     "TechnicalTraderAgent",
     "TechnicalTraderError",
     "TechnicalTraderRuntime",
@@ -134,6 +156,8 @@ __all__ = [
     "ValidationSplitPolicy",
     "VOLUME_BREAKOUT_EXECUTOR_ID",
     "benchmark_fallback_executor",
+    "create_technical_model_client_from_env",
+    "compact_horizon_technical_report",
     "create_technical_trader_runtime",
     "make_langgraph_node",
     "multi_asset_technical_portfolio_executor",

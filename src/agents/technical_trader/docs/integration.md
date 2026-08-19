@@ -8,9 +8,9 @@ models contain only technical-analysis evidence.
 
 ## 1. Model adapter
 
-Implement `ModelClient.generate_structured(...)`.
-
-It receives:
+The repository includes interchangeable OpenAI and Anthropic implementations
+of `ModelClient.generate_structured(...)` under
+`agents.technical_trader.adapters`. Both receive:
 
 - system and user prompts;
 - the required Pydantic response model; and
@@ -20,13 +20,100 @@ It receives:
 It must return `ModelCallResult`, containing structured output and `ModelUsage`.
 If usage is unavailable, return `ModelUsage.unavailable(...)`.
 
-Model integration details to confirm:
+Both adapters validate provider JSON against the requested Pydantic model and
+return normalized input/output token usage, the provider request ID, model
+identity, and provider metadata. Provider APIs do not report a monetary charge
+per response, so `reported_cost` remains unset; the shared metrics layer may
+calculate cost from its centrally maintained price table.
 
-- provider and model;
-- structured-output mechanism;
-- retry boundaries;
-- token and cost field availability; and
-- provider request identifiers.
+Install the optional provider SDKs without affecting the base installation:
+
+```bash
+pip install -e ".[technical-models]"
+```
+
+Provider selection is explicit and occurs only at the composition root. No API
+key is read when the package is imported.
+
+```bash
+# OpenAI
+export TECHNICAL_TRADER_MODEL_PROVIDER=openai
+export TECHNICAL_TRADER_MODEL=<supported-openai-model>
+export OPENAI_API_KEY=<secret>
+
+# Anthropic
+export TECHNICAL_TRADER_MODEL_PROVIDER=anthropic
+export TECHNICAL_TRADER_MODEL=<supported-claude-model>
+export ANTHROPIC_API_KEY=<secret>
+```
+
+On PowerShell, use `$env:VARIABLE_NAME="value"` for the current terminal
+session. Secrets must remain in the deployment environment or secret manager;
+they must not be stored in source files, examples, logs, or committed `.env`
+files.
+
+Create the selected adapter and inject it into the unchanged runtime factory:
+
+```python
+from agents.technical_trader import (
+    ExecutionPolicy,
+    create_technical_model_client_from_env,
+    create_technical_trader_runtime,
+)
+
+execution_policy = ExecutionPolicy()
+model_client = create_technical_model_client_from_env(
+    execution_policy=execution_policy,
+)
+runtime = create_technical_trader_runtime(
+    model_client=model_client,
+    data_service=data_service,
+    backtest_engine=engine,
+    available_executors=engine.registered_executor_ids,
+    validation_split_policy=shared_validation_policy,
+    benchmark_symbol="IVV",  # or the PM-approved shared benchmark
+    execution_policy=execution_policy,
+)
+```
+
+`benchmark_symbol` is optional at the Python boundary for backward
+compatibility, but production composition should inject the PM-approved shared
+benchmark. If it is omitted, the model must declare a permitted benchmark and
+the run fails closed if it does not. Code always replaces model-authored dates
+with the exact horizon-matched dates returned by the shared validation policy.
+
+Deterministic analysis continues to cover the full PM universe. By default,
+the candidate and review prompts receive the 20 highest-ranked unique ETFs and
+all horizon-eligible evidence for those symbols. The full report remains in the
+final package. `candidate_prompt_max_assets` can be set from 10 through 120 at
+runtime without changing either provider adapter. Code rejects a model proposal
+that cites a symbol, evidence ID, or opportunity combination outside the exact
+shortlist submitted to that call.
+
+Common optional settings are:
+
+- `TECHNICAL_TRADER_MAX_OUTPUT_TOKENS` (default `12000`);
+- `TECHNICAL_TRADER_PROVIDER_TIMEOUT_SECONDS` (default `18`); and
+- `TECHNICAL_TRADER_PROVIDER_MAX_RETRIES` (default `1`, maximum `3`).
+
+OpenAI additionally accepts
+`TECHNICAL_TRADER_OPENAI_REASONING_EFFORT` and
+`TECHNICAL_TRADER_OPENAI_OUTPUT_MODE=json_schema|json_object`. Native JSON
+Schema is the default; `json_object` retains local Pydantic validation for a
+model/schema combination that cannot use native schema output.
+
+Anthropic uses native structured outputs by default. The selected Claude model
+must support that feature. Set
+`TECHNICAL_TRADER_ANTHROPIC_NATIVE_STRUCTURED_OUTPUTS=false` only when testing a
+model without native support; the adapter will request one JSON object through
+the prompt and still validate it locally.
+
+The provider factory requires the runtime's `ExecutionPolicy` and rejects
+configurations where all provider attempts plus five seconds of retry headroom
+would reach its model-call deadline. The runtime independently checks a
+deadline-aware provider client against its own policy, so accidentally passing
+different policies also fails during construction instead of cancelling a
+retry during a paid call.
 
 ## 2. Data Service adapter
 
@@ -132,6 +219,7 @@ runtime = create_technical_trader_runtime(
     backtest_engine=engine,
     available_executors=engine.registered_executor_ids,
     validation_split_policy=shared_validation_policy,
+    benchmark_symbol=pm_approved_benchmark,
 )
 ```
 
@@ -161,9 +249,13 @@ the system must not backtest a merely similar strategy.
 
 `validation_split_policy` is intentionally injected. The Technical Trader does
 not choose calendar dates, allowing all three traders to use the same policy.
-That shared policy must resolve exactly the mandate horizon's number of market
-sessions. The agent performs a calendar-span boundary check; the policy and
-Data Service remain responsible for exact exchange-calendar counting.
+It is a required construction dependency, so missing wiring fails before data
+or model calls. The policy receives a code-owned provisional daily plan with
+the mandate as-of date, injected benchmark when available, required benchmark
+metric, and held-out/horizon validation requirements. That shared policy must
+resolve exactly the mandate horizon's number of market sessions. The agent
+performs a calendar-span boundary check; the policy and Data Service remain
+responsible for exact exchange-calendar counting.
 
 Backtest Engine integration details still to confirm:
 
