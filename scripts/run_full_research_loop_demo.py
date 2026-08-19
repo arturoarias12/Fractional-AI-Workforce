@@ -6,43 +6,53 @@ with:
 
   * REAL Fundamental Trader  - agents.fundamental_trader (Aditi)
   * REAL Quant Trader        - agents.quant_trader (Shaurya) - no LLM required
+  * REAL/STUBBED Technical Trader - see note below
   * REAL Risk Agent          - agents.risk_agent.RiskAgentImpl (Yutong)
   * REAL Reporting Agent     - agents.reporting_agent.ReportingAgentImpl (Emma)
-  * STUBBED Technical Trader - see note below
-  * SCRIPTED PM / Memory     - see note below
+  * REAL PM decision         - a durable LangGraph interrupt, resumable via --resume
+  * REAL Memory              - services.file_memory_store.FileBackedMemoryStore
 
-Why Technical Trader is stubbed here, not faked as "real"
-------------------------------------------------------------
-TechnicalTraderAgent.run() calls a real ``ModelClient.generate_structured(...)``
-- there is currently no concrete ModelClient implementation anywhere in the
-repo (verified: only the Protocol exists in
-``agents/technical_trader/model_client.py``, and no test fake exists for it
-either). Wiring a real one requires an actual LLM provider credential and
-Arturo's own integration work; building a synthetic fake well enough to
-faithfully exercise his ~400K-line staged pipeline is a separate, larger
-task that isn't safe to improvise here. So this demo plugs in a clearly
-labeled stub node for Technical Trader (same pattern the Risk agent's own
-graph-integration test already uses for ALL THREE traders) - it returns a
-realistic, schema-valid TraderStrategyPackage so the *topology* runs
-end-to-end, without pretending Technical's actual LLM reasoning executed.
+Technical Trader: real when credentials are configured, stubbed otherwise
+----------------------------------------------------------------------------
+TechnicalTraderAgent.run() calls a real ``ModelClient.generate_structured(...)``.
+A concrete OpenAI/Anthropic implementation now exists
+(``agents.technical_trader.adapters``), gated behind environment variables -
+see ``agents/technical_trader/docs/integration.md``. This script constructs
+the real runtime whenever ``TECHNICAL_TRADER_MODEL_PROVIDER`` (and the
+matching model + API key) are set; otherwise it falls back to a clearly
+labeled stub node so the graph topology still runs end-to-end.
+
+Verified in the environment this integration was written in: imports, model
+client construction, engine/executor registration (``TECHNICAL_STRATEGY_EXECUTORS``),
+and runtime construction all succeed; with a placeholder API key, the full
+graph runs and Technical Trader settles as a real (non-stub) failed package
+when the provider call itself is rejected, exactly as the contract expects -
+no crash, no silently-swallowed error. A live smoke test with a real API key
+was not possible without provider network access in that environment; that
+is the one thing left for whoever runs this with real credentials.
 
 Everything downstream of the trader join (Risk, Reporting, PM decision,
-Memory write) runs for real, against this mix of two real proposals + one
-stub, exactly the same as it would against three real ones - the graph
-doesn't know or care which trader nodes are real.
+Memory write) runs for real regardless of which trader nodes are real vs
+stubbed - the graph doesn't know or care.
 
-Why PM and Memory are scripted, not implemented
---------------------------------------------------
+Why PM decisions use a durable interrupt, and Memory persists to disk
+--------------------------------------------------------------------------
 Portfolio Manager is deliberately the human's seat (see
-``management/portfolio_manager.py`` - a Protocol for a future UI, not an
-autonomous agent), and no persistence-backed Memory service exists yet.
-Both are scripted stand-ins here purely so one round can complete without a
-live human in the loop, matching the same pattern already established by
-``tests/risk_agent/test_risk_agent_graph_integration.py``.
+``management/portfolio_manager.py``). The graph's own
+``human_pm_decision_node`` (not overridden here) pauses on a real LangGraph
+interrupt and waits for ``--resume --decision-json ...``. Because the
+dashboard launches each round as a fresh subprocess, both the paused
+interrupt and recorded Memory need to survive a process exiting - hence
+``AsyncSqliteSaver`` (checkpoints) and ``FileBackedMemoryStore`` (Memory),
+both backed by files under ``dashboard/data/``, instead of the in-process
+``MemorySaver``/``InMemoryMemoryStore`` this script used previously.
 
-Run (offline, no network - uses the real 120-ticker ETF fixtures):
+Run (offline, no network for data/backtesting - uses the real 120-ticker
+ETF fixtures; Technical Trader's own model call, if configured, does use
+the network):
 
     python scripts/run_full_research_loop_demo.py
+    python scripts/run_full_research_loop_demo.py --resume --run-id <id> --decision-json <path>
 """
 
 from __future__ import annotations
@@ -97,6 +107,23 @@ from dashboard.workflow_adapter import write_dashboard_snapshot  # noqa: E402
 from integration import WorkflowRunner  # noqa: E402
 from services.file_memory_store import FileBackedMemoryStore  # noqa: E402
 from protocols.research_contracts import MemoryRecord  # noqa: E402
+
+# Real Technical Trader is optional at import time: only constructed in main()
+# if TECHNICAL_TRADER_MODEL_PROVIDER etc. are actually set (see
+# _build_technical_trader_node below). Importing the package itself never
+# reads credentials - see agents/technical_trader/docs/integration.md.
+from agents.technical_trader import (  # noqa: E402
+    ExecutionPolicy as TechnicalExecutionPolicy,
+    TECHNICAL_STRATEGY_EXECUTORS,
+    TechnicalModelConfigurationError,
+    create_technical_model_client_from_env,
+    create_technical_trader_runtime,
+)
+
+# A ticker present in the offline 120-ETF fixture, used as Technical Trader's
+# PM-approved shared benchmark (see integration.md - required for its
+# out-of-sample "must beat the benchmark" gate).
+TECHNICAL_TRADER_BENCHMARK_SYMBOL = "IVV"
 
 langgraph_missing = False
 try:
@@ -442,14 +469,59 @@ def _build_nodes(memory_store: FileBackedMemoryStore) -> "ProductionNodeSet":
         })
         return {"quant_trader_package": package.model_dump(mode="json")}
 
-    # --- Stub Technical Trader (see module docstring) ---
-    def technical_trader_node(state: Mapping[str, Any]) -> dict[str, Any]:
-        current_mandate = PMMandate.model_validate(state["pm_mandate"])
-        package = _stub_technical_trader_package(
-            current_mandate,
-            int(state.get("round_number", 1)),
+    # --- Technical Trader: real if credentials are configured, else stubbed ---
+    # No API key was available to verify a live model call end-to-end in the
+    # environment this integration was written in - see this module's
+    # docstring. Everything up to the actual provider call (imports, model
+    # client construction, engine/executor registration, runtime
+    # construction) has been verified to wire together correctly; a live
+    # smoke test with real credentials is the one thing left for whoever
+    # runs this with a real TECHNICAL_TRADER_MODEL_PROVIDER / API key set.
+    try:
+        technical_execution_policy = TechnicalExecutionPolicy()
+        technical_model_client = create_technical_model_client_from_env(
+            execution_policy=technical_execution_policy,
         )
-        return {"technical_trader_package": package.model_dump(mode="json")}
+        technical_backtest_engine = DeterministicBacktestEngine(
+            data_resolver=OfflineBacktestResolver(),
+            strategy_executors=list(TECHNICAL_STRATEGY_EXECUTORS),
+        )
+        technical_runtime = create_technical_trader_runtime(
+            model_client=technical_model_client,
+            data_service=OfflineDataService(),
+            backtest_engine=technical_backtest_engine,
+            available_executors=[e.executor_id for e in TECHNICAL_STRATEGY_EXECUTORS],
+            validation_split_policy=PercentileValidationSplitPolicy(train_fraction=0.9),
+            benchmark_symbol=TECHNICAL_TRADER_BENCHMARK_SYMBOL,
+            execution_policy=technical_execution_policy,
+        )
+        print(
+            "Technical Trader: REAL - "
+            f"{technical_model_client.__class__.__name__} configured from environment."
+        )
+
+        async def technical_trader_node(state: Mapping[str, Any]) -> dict[str, Any]:
+            current_mandate = PMMandate.model_validate(state["pm_mandate"])
+            package = await technical_runtime.research(current_mandate, execution_context={
+                "run_id": RUN_ID, "round_number": state.get("round_number", 1), "attempt": 1,
+            })
+            return {"technical_trader_package": package.model_dump(mode="json")}
+
+    except TechnicalModelConfigurationError as config_error:
+        print(
+            "Technical Trader: STUBBED - no model provider configured "
+            f"({config_error}). Set TECHNICAL_TRADER_MODEL_PROVIDER, "
+            "TECHNICAL_TRADER_MODEL, and the matching API key to use the "
+            "real agent - see agents/technical_trader/docs/integration.md."
+        )
+
+        def technical_trader_node(state: Mapping[str, Any]) -> dict[str, Any]:
+            current_mandate = PMMandate.model_validate(state["pm_mandate"])
+            package = _stub_technical_trader_package(
+                current_mandate,
+                int(state.get("round_number", 1)),
+            )
+            return {"technical_trader_package": package.model_dump(mode="json")}
 
     # --- Real Risk + Reporting ---
     risk_agent = RiskAgentImpl()
@@ -555,7 +627,6 @@ async def main(
 
             print("Running one research-loop round (or resuming to the next PM decision)...")
             print("  Real: Fundamental Trader, Quant Trader, Risk Agent, Reporting Agent, Memory")
-            print("  Stubbed: Technical Trader (no ModelClient wired yet - see docstring)")
             print("  Real (durable interrupt): PM decision")
             print()
             final_state = await runner.start_workflow(workflow_input, publish_progress=True)
