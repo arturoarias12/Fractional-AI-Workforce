@@ -18,6 +18,8 @@ dependencies = [
 [project.optional-dependencies]
 langgraph = [
     "langgraph>=1.2,<2",
+    "langgraph-checkpoint-sqlite>=2.0,<4",
+    "aiosqlite>=0.20,<1",
 ]
 quant-demo = [
     "openpyxl>=3.1,<4",

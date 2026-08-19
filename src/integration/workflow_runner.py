@@ -49,9 +49,20 @@ class WorkflowRunner:
         return state
 
     async def resume_workflow(
-        self, run_id: str, pm_decision: Mapping[str, Any]
+        self,
+        run_id: str,
+        pm_decision: Mapping[str, Any],
+        *,
+        state_update: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
-        """Resume the graph's durable PM interrupt with a validated decision."""
+        """Resume the graph's durable PM interrupt with a validated decision.
+
+        ``state_update`` is optional and additive (flagged for review - added
+        to support staffing changes for the *next* round, e.g.
+        ``{"active_specialists": [...]}`` when the PM chooses to bench/hire
+        an agent before requesting another round; existing callers that only
+        pass ``pm_decision`` are unaffected).
+        """
 
         decision = PMDecision.model_validate(pm_decision)
         if decision.workflow_id != run_id:
@@ -65,7 +76,10 @@ class WorkflowRunner:
             ) from error
 
         state = await self._compiled_graph.ainvoke(
-            Command(resume={"pm_decision": decision.model_dump(mode="json")}),
+            Command(
+                resume={"pm_decision": decision.model_dump(mode="json")},
+                update=dict(state_update) if state_update else None,
+            ),
             config=self._config_for(run_id),
         )
         await self._publish_snapshot(state)

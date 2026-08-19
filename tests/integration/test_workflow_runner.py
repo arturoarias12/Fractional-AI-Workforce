@@ -72,3 +72,56 @@ def test_start_publishes_checkpoints_when_graph_supports_streaming() -> None:
 
     assert state["agent_lifecycle"]["quant_trader_agent"]["current_state"] == "completed"
     assert len(snapshots) >= 2
+
+
+class ResumeRecordingGraph:
+    """Records whatever is passed to ainvoke - a Command, for resume calls."""
+
+    def __init__(self) -> None:
+        self.payload = None
+        self.config = None
+
+    async def ainvoke(self, payload, *, config):
+        self.payload = payload
+        self.config = config
+        return {"workflow_id": "resumed", "agent_lifecycle": {}}
+
+
+def test_resume_passes_pm_decision_and_optional_state_update() -> None:
+    graph = ResumeRecordingGraph()
+    snapshots = []
+    runner = WorkflowRunner(compiled_graph=graph, snapshot_writer=snapshots.append)
+    pm_decision = {
+        "decision_id": "pilot-run-1.decision-1",
+        "workflow_id": "pilot-run-1",
+        "decision": "request_another_round",
+        "rationale": "Widening the universe for round 2.",
+    }
+
+    asyncio.run(runner.resume_workflow(
+        "pilot-run-1",
+        pm_decision,
+        state_update={"active_specialists": ["fundamental_trader_agent", "risk_agent"]},
+    ))
+
+    command = graph.payload
+    assert command.resume["pm_decision"]["decision"] == "request_another_round"
+    assert command.update == {"active_specialists": ["fundamental_trader_agent", "risk_agent"]}
+
+
+def test_resume_without_state_update_still_works() -> None:
+    graph = ResumeRecordingGraph()
+    snapshots = []
+    runner = WorkflowRunner(compiled_graph=graph, snapshot_writer=snapshots.append)
+    pm_decision = {
+        "decision_id": "pilot-run-2.decision-1",
+        "workflow_id": "pilot-run-2",
+        "decision": "reject",
+        "rationale": "No candidate cleared Risk review.",
+    }
+
+    asyncio.run(runner.resume_workflow("pilot-run-2", pm_decision))
+
+    command = graph.payload
+    assert command.resume["pm_decision"]["decision"] == "reject"
+    assert command.update is None
