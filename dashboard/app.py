@@ -66,11 +66,33 @@ UNIVERSE_OPTIONS = {
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LIVE_INPUT_PATH = REPO_ROOT / "dashboard" / "data" / "latest_pm_mandate.json"
+LIVE_DECISION_PATH = REPO_ROOT / "dashboard" / "data" / "latest_pm_decision.json"
 LIVE_RUNNER_PATH = REPO_ROOT / "scripts" / "run_full_research_loop_demo.py"
 LIVE_LOG_PATH = REPO_ROOT / "dashboard" / "data" / "live_workflow.log"
 # Updated together with the offline workbook. This keeps the PM date truthful:
 # the current fixture's last observed trading date is 2026-06-29.
 OFFLINE_DATA_MAX_DATE = date(2026, 6, 29)
+
+# Maps this dashboard's short staffing keys (make_agents' dict keys) to the
+# SpecialistId strings the backend graph's active_specialists check expects
+# (graph.production._agent_is_active). Kept here rather than imported so this
+# file has no import-time dependency on the src/ package layout.
+STAFFING_KEY_TO_SPECIALIST_ID = {
+    "technical": "technical_trader_agent",
+    "fundamental": "fundamental_trader_agent",
+    "quant": "quant_trader_agent",
+    "risk": "risk_agent",
+    "reporting": "reporting_agent",
+}
+
+
+def _active_specialists_from_staffing() -> list[str]:
+    """Translate the PM's current Hire/Bench choices into backend agent ids."""
+    return [
+        STAFFING_KEY_TO_SPECIALIST_ID[key]
+        for key, status in st.session_state.staffing.items()
+        if status == "Active" and key in STAFFING_KEY_TO_SPECIALIST_ID
+    ]
 
 
 def launch_live_research(mandate: dict[str, Any]) -> subprocess.Popen[str]:
@@ -82,7 +104,14 @@ def launch_live_research(mandate: dict[str, Any]) -> subprocess.Popen[str]:
     """
 
     LIVE_INPUT_PATH.write_text(
-        json.dumps({"pm_mandate": mandate}, indent=2), encoding="utf-8"
+        json.dumps(
+            {
+                "pm_mandate": mandate,
+                "active_specialists": _active_specialists_from_staffing(),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
     )
     venv_python = REPO_ROOT / ".venv" / "bin" / "python"
     python = str(venv_python if venv_python.exists() else Path(sys.executable))
@@ -96,8 +125,54 @@ def launch_live_research(mandate: dict[str, Any]) -> subprocess.Popen[str]:
         )
 
 
+def launch_live_resume(
+    run_id: str, pm_decision: dict[str, Any]
+) -> subprocess.Popen[str]:
+    """Resume a paused live round with a real PM decision.
+
+    Bundles the PM's current Hire/Bench/Pivot selections as a
+    ``state_update`` so a "Request Another Round" decision also carries
+    forward whatever staffing change the PM just made - the two actions
+    (decide, and update staffing for next round) happen together, matching
+    the staffing dialog's own caption ("apply to the next round").
+    """
+
+    LIVE_DECISION_PATH.write_text(
+        json.dumps(
+            {
+                "pm_decision": pm_decision,
+                "state_update": {
+                    "active_specialists": _active_specialists_from_staffing()
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    venv_python = REPO_ROOT / ".venv" / "bin" / "python"
+    python = str(venv_python if venv_python.exists() else Path(sys.executable))
+    with LIVE_LOG_PATH.open("w", encoding="utf-8") as log_file:
+        return subprocess.Popen(
+            [
+                python, str(LIVE_RUNNER_PATH),
+                "--resume", "--run-id", run_id,
+                "--decision-json", str(LIVE_DECISION_PATH),
+            ],
+            cwd=REPO_ROOT,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+
 def poll_live_research() -> tuple[str | None, str | None]:
-    """Return the current local-run state and promote a finished snapshot."""
+    """Return the current local-run state and promote a finished snapshot.
+
+    Exit code 0 alone is not enough to mean "fully completed": the backend
+    script also exits 0 when it pauses at a real PM-decision interrupt
+    (see run_full_research_loop_demo.py). The exported snapshot's
+    workflow.status is what actually distinguishes the two.
+    """
 
     process = st.session_state.get("live_process")
     if process is None:
@@ -109,6 +184,13 @@ def poll_live_research() -> tuple[str | None, str | None]:
     st.session_state.live_process = None
     if return_code == 0:
         st.session_state.live_snapshot_ready = True
+        try:
+            status = load_dashboard_snapshot().get("workflow", {}).get("status")
+        except (OSError, ValueError):
+            status = None
+        if status == "Waiting for PM Decision":
+            st.session_state.phase = "awaiting_decision"
+            return "awaiting_decision", "Round complete. Awaiting a PM decision to continue."
         st.session_state.phase = "completed"
         return "completed", "Live research completed. The dashboard now shows its exported workflow snapshot."
 
@@ -836,14 +918,76 @@ def report_page() -> None:
     st.subheader("Human PM Decision")
     if snapshot:
         decision = snapshot.get("pm_decision", {})
-        if decision:
-            st.write(f"**Recorded decision:** {str(decision.get('decision', 'N/A')).title()}")
-            st.write(f"**Rationale:** {decision.get('rationale') or 'No rationale exported.'}")
+        workflow_info = snapshot.get("workflow", {})
+        awaiting_decision = workflow_info.get("status") == "Waiting for PM Decision"
+
+        if not awaiting_decision:
+            # A terminal decision (select/reject) was already recorded for
+            # this workflow - nothing left to resume, so stay read-only.
+            if decision:
+                st.write(f"**Recorded decision:** {str(decision.get('decision', 'N/A')).title()}")
+                st.write(f"**Rationale:** {decision.get('rationale') or 'No rationale exported.'}")
+            else:
+                st.caption("No PM decision was exported for this workflow run.")
+            st.caption("This workflow has no PM decision awaiting resolution.")
+            with st.expander("Technical details · raw Reporting and Risk output"):
+                st.json({"reporting": reporting, "risk_review": risk_review, "pm_decision": decision})
+            return
+
+        run_id = str(workflow_info.get("workflow_id") or "")
+        round_number = workflow_info.get("round_number") or current_round
+        surviving_ids = reporting.get("surviving_candidate_ids") or []
+        st.caption(
+            "This round is complete and paused for a real decision - resuming "
+            "will run the next round for real, using your current staffing choices."
+        )
+
+        def _resume(decision_type: str, *, selected_candidate_id: str | None = None) -> None:
+            rationale = st.session_state.get("pm_decision_rationale", "").strip() or (
+                "PM decision recorded from the live dashboard."
+            )
+            pm_decision = {
+                "decision_id": f"{run_id}.decision-{round_number}",
+                "workflow_id": run_id,
+                "decision": decision_type,
+                "rationale": rationale,
+            }
+            if selected_candidate_id:
+                pm_decision["selected_candidate_id"] = selected_candidate_id
+            try:
+                st.session_state.live_process = launch_live_resume(run_id, pm_decision)
+            except OSError as error:
+                st.error(f"Could not resume the live workflow: {error}")
+                return
+            st.session_state.live_snapshot_ready = False
+            st.session_state.phase = "running"
+            st.session_state.round_number = round_number + 1 if decision_type == "request_another_round" else round_number
+            st.session_state.notice = f"Resuming with decision: {decision_type.replace('_', ' ')}."
+            st.rerun()
+
+        st.text_input(
+            "Rationale for this decision (optional)",
+            key="pm_decision_rationale",
+            placeholder="e.g. Strongest risk-adjusted return with a clean Risk review.",
+        )
+
+        if surviving_ids:
+            selected = st.selectbox(
+                "Candidate to select (if choosing Select Strategy)",
+                options=surviving_ids,
+                format_func=lambda cid: cid.split(".")[-2].replace("_", " ").title() if "." in cid else cid,
+            )
         else:
-            st.caption("No PM decision was exported for this workflow run.")
-        st.caption("Snapshot mode is read-only. PM decisions are recorded by the workflow and shown after the next export.")
-        with st.expander("Technical details · raw Reporting and Risk output"):
-            st.json({"reporting": reporting, "risk_review": risk_review, "pm_decision": decision})
+            selected = None
+            st.caption("No surviving candidate this round - Select Strategy is unavailable.")
+
+        one, two, three = st.columns(3)
+        if one.button("Select Strategy", type="primary", use_container_width=True, disabled=not selected):
+            _resume("select", selected_candidate_id=selected)
+        if two.button("Reject", use_container_width=True):
+            _resume("reject")
+        if three.button("Request Another Round", use_container_width=True):
+            _resume("request_another_round")
         return
     if st.session_state.pm_decision:
         st.success(f"Decision recorded: {st.session_state.pm_decision}")

@@ -6,43 +6,53 @@ with:
 
   * REAL Fundamental Trader  - agents.fundamental_trader (Aditi)
   * REAL Quant Trader        - agents.quant_trader (Shaurya) - no LLM required
+  * REAL/STUBBED Technical Trader - see note below
   * REAL Risk Agent          - agents.risk_agent.RiskAgentImpl (Yutong)
   * REAL Reporting Agent     - agents.reporting_agent.ReportingAgentImpl (Emma)
-  * STUBBED Technical Trader - see note below
-  * SCRIPTED PM / Memory     - see note below
+  * REAL PM decision         - a durable LangGraph interrupt, resumable via --resume
+  * REAL Memory              - services.file_memory_store.FileBackedMemoryStore
 
-Why Technical Trader is stubbed here, not faked as "real"
-------------------------------------------------------------
-TechnicalTraderAgent.run() calls a real ``ModelClient.generate_structured(...)``
-- there is currently no concrete ModelClient implementation anywhere in the
-repo (verified: only the Protocol exists in
-``agents/technical_trader/model_client.py``, and no test fake exists for it
-either). Wiring a real one requires an actual LLM provider credential and
-Arturo's own integration work; building a synthetic fake well enough to
-faithfully exercise his ~400K-line staged pipeline is a separate, larger
-task that isn't safe to improvise here. So this demo plugs in a clearly
-labeled stub node for Technical Trader (same pattern the Risk agent's own
-graph-integration test already uses for ALL THREE traders) - it returns a
-realistic, schema-valid TraderStrategyPackage so the *topology* runs
-end-to-end, without pretending Technical's actual LLM reasoning executed.
+Technical Trader: real when credentials are configured, stubbed otherwise
+----------------------------------------------------------------------------
+TechnicalTraderAgent.run() calls a real ``ModelClient.generate_structured(...)``.
+A concrete OpenAI/Anthropic implementation now exists
+(``agents.technical_trader.adapters``), gated behind environment variables -
+see ``agents/technical_trader/docs/integration.md``. This script constructs
+the real runtime whenever ``TECHNICAL_TRADER_MODEL_PROVIDER`` (and the
+matching model + API key) are set; otherwise it falls back to a clearly
+labeled stub node so the graph topology still runs end-to-end.
+
+Verified in the environment this integration was written in: imports, model
+client construction, engine/executor registration (``TECHNICAL_STRATEGY_EXECUTORS``),
+and runtime construction all succeed; with a placeholder API key, the full
+graph runs and Technical Trader settles as a real (non-stub) failed package
+when the provider call itself is rejected, exactly as the contract expects -
+no crash, no silently-swallowed error. A live smoke test with a real API key
+was not possible without provider network access in that environment; that
+is the one thing left for whoever runs this with real credentials.
 
 Everything downstream of the trader join (Risk, Reporting, PM decision,
-Memory write) runs for real, against this mix of two real proposals + one
-stub, exactly the same as it would against three real ones - the graph
-doesn't know or care which trader nodes are real.
+Memory write) runs for real regardless of which trader nodes are real vs
+stubbed - the graph doesn't know or care.
 
-Why PM and Memory are scripted, not implemented
---------------------------------------------------
+Why PM decisions use a durable interrupt, and Memory persists to disk
+--------------------------------------------------------------------------
 Portfolio Manager is deliberately the human's seat (see
-``management/portfolio_manager.py`` - a Protocol for a future UI, not an
-autonomous agent), and no persistence-backed Memory service exists yet.
-Both are scripted stand-ins here purely so one round can complete without a
-live human in the loop, matching the same pattern already established by
-``tests/risk_agent/test_risk_agent_graph_integration.py``.
+``management/portfolio_manager.py``). The graph's own
+``human_pm_decision_node`` (not overridden here) pauses on a real LangGraph
+interrupt and waits for ``--resume --decision-json ...``. Because the
+dashboard launches each round as a fresh subprocess, both the paused
+interrupt and recorded Memory need to survive a process exiting - hence
+``AsyncSqliteSaver`` (checkpoints) and ``FileBackedMemoryStore`` (Memory),
+both backed by files under ``dashboard/data/``, instead of the in-process
+``MemorySaver``/``InMemoryMemoryStore`` this script used previously.
 
-Run (offline, no network - uses the real 120-ticker ETF fixtures):
+Run (offline, no network for data/backtesting - uses the real 120-ticker
+ETF fixtures; Technical Trader's own model call, if configured, does use
+the network):
 
     python scripts/run_full_research_loop_demo.py
+    python scripts/run_full_research_loop_demo.py --resume --run-id <id> --decision-json <path>
 """
 
 from __future__ import annotations
@@ -95,11 +105,30 @@ from agents.reporting_agent import ReportingAgentImpl  # noqa: E402
 from protocols.reporting import ReportingRequest  # noqa: E402
 from dashboard.workflow_adapter import write_dashboard_snapshot  # noqa: E402
 from integration import WorkflowRunner  # noqa: E402
+from services.file_memory_store import FileBackedMemoryStore  # noqa: E402
+from protocols.research_contracts import MemoryRecord  # noqa: E402
+
+# Real Technical Trader is optional at import time: only constructed in main()
+# if TECHNICAL_TRADER_MODEL_PROVIDER etc. are actually set (see
+# _build_technical_trader_node below). Importing the package itself never
+# reads credentials - see agents/technical_trader/docs/integration.md.
+from agents.technical_trader import (  # noqa: E402
+    ExecutionPolicy as TechnicalExecutionPolicy,
+    TECHNICAL_STRATEGY_EXECUTORS,
+    TechnicalModelConfigurationError,
+    create_technical_model_client_from_env,
+    create_technical_trader_runtime,
+)
+
+# A ticker present in the offline 120-ETF fixture, used as Technical Trader's
+# PM-approved shared benchmark (see integration.md - required for its
+# out-of-sample "must beat the benchmark" gate).
+TECHNICAL_TRADER_BENCHMARK_SYMBOL = "IVV"
 
 langgraph_missing = False
 try:
     from graph.production import ProductionNodeSet, compile_production_workflow  # noqa: E402
-    from langgraph.checkpoint.memory import MemorySaver  # noqa: E402
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver  # noqa: E402
 except ImportError:
     langgraph_missing = True
 
@@ -108,6 +137,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 RUN_ID = "full-loop-demo-run"
 WORKFLOW_ID = "full-loop-demo-workflow"
 TASK_ID = "full-loop-demo-task"
+
+# Both persist to disk (not in-process only) because the dashboard launches
+# each round as a fresh subprocess: a paused PM-decision interrupt and any
+# recorded Memory must survive that process exiting. See
+# docs/fundamental_trader.md and this script's module docstring.
+CHECKPOINT_DB_PATH = REPO_ROOT / "dashboard" / "data" / "workflow_checkpoints.sqlite"
+MEMORY_STORE_DIR = REPO_ROOT / "dashboard" / "data" / "memory"
 
 
 # ---------------------------------------------------------------------------
@@ -301,38 +337,17 @@ def _stub_technical_trader_package(
 
 
 # ---------------------------------------------------------------------------
-# Scripted PM / Memory nodes
+# PM intake (Memory read/write are now real - see main(); PM decision is
+# no longer scripted here at all - omitting it from ProductionNodeSet makes
+# the graph default to its own real human_pm_decision_node, a durable
+# LangGraph interrupt. See this module's docstring for why that requires a
+# persistent (SQLite) checkpointer instead of the in-process MemorySaver
+# this script used previously.)
 # ---------------------------------------------------------------------------
-
-def memory_read_node(state: Mapping[str, Any]) -> Mapping[str, Any]:
-    del state
-    return {
-        "round_audit_summary_reference": "demo-audit-round-1",
-        "round_history_reference": "demo-history-ref",
-        "memory_context": None,
-    }
-
 
 def pm_intake_node(state: Mapping[str, Any]) -> Mapping[str, Any]:
     del state
     return {}
-
-
-def pm_decision_node(state: Mapping[str, Any]) -> Mapping[str, Any]:
-    return {
-        "pm_decision": PMDecision(
-            decision_id=f"{state['workflow_id']}.decision-1",
-            workflow_id=str(state["workflow_id"]),
-            decision=PMDecisionType.REJECT,
-            rationale="Demo run ends after one round (scripted PM, not a live human).",
-        ).model_dump(mode="json"),
-        "pending_human_action": None,
-    }
-
-
-def memory_write_node(state: Mapping[str, Any]) -> Mapping[str, Any]:
-    del state
-    return {"memory_record_id": "demo-memory-record-1"}
 
 
 class RecordingReportingNode:
@@ -351,11 +366,16 @@ class RecordingReportingNode:
 # Main
 # ---------------------------------------------------------------------------
 
-def _load_mandate(mandate_path: Path | None) -> PMMandate:
-    """Load a dashboard-created mandate, or use the documented demo default."""
+def _load_mandate_and_payload(mandate_path: Path | None) -> tuple[PMMandate, dict[str, Any]]:
+    """Load a dashboard-created mandate, or use the documented demo default.
+
+    Returns both the validated mandate and the raw payload dict, since the
+    payload may also carry ``active_specialists`` (staffing) for this run -
+    a sibling key to ``pm_mandate``, not part of the mandate itself.
+    """
 
     if mandate_path is None:
-        return PMMandate(
+        mandate = PMMandate(
             workflow_id=WORKFLOW_ID,
             task_id=TASK_ID,
             as_of_date=OFFLINE_DATA_MAX_DATE,
@@ -364,6 +384,7 @@ def _load_mandate(mandate_path: Path | None) -> PMMandate:
             ),
             permitted_asset_universe=list(PANEL),
         )
+        return mandate, {}
 
     payload = json.loads(mandate_path.read_text(encoding="utf-8"))
     raw_mandate = payload.get("pm_mandate", payload)
@@ -374,15 +395,43 @@ def _load_mandate(mandate_path: Path | None) -> PMMandate:
             f"{OFFLINE_DATA_MAX_DATE.isoformat()}, but the PM mandate requested "
             f"{mandate.as_of_date.isoformat()}. Choose an available as-of date."
         )
-    return mandate
+    return mandate, payload
 
 
-async def main(mandate_path: Path | None = None) -> None:
-    if langgraph_missing:
-        print("langgraph is not installed - run: pip install -e '.[langgraph]'")
-        return
+def _build_nodes(memory_store: FileBackedMemoryStore) -> "ProductionNodeSet":
+    """Build the ProductionNodeSet shared by both start and resume paths."""
 
-    mandate = _load_mandate(mandate_path)
+    async def memory_read_node(state: Mapping[str, Any]) -> dict[str, Any]:
+        # memory_read runs first in the graph, before the "prepare" node
+        # that derives a top-level "workflow_id" key from the mandate - so
+        # fall back to the mandate itself, which is always present.
+        workflow_id = str(state.get("workflow_id") or state["pm_mandate"]["workflow_id"])
+        context = await memory_store.load_context(workflow_id)
+        return {
+            "memory_context": context.model_dump(mode="json"),
+            "round_audit_summary_reference": f"{workflow_id}.round-{state.get('round_number', 1)}.audit",
+            "round_history_reference": f"{workflow_id}.history",
+        }
+
+    async def memory_write_node(state: Mapping[str, Any]) -> dict[str, Any]:
+        pm_decision = PMDecision.model_validate(state["pm_decision"])
+        reporting_output = state.get("reporting_output") or {}
+        risk_response = state.get("risk_review_response") or {}
+        record = MemoryRecord(
+            record_id=f"{state['workflow_id']}.round-{state.get('round_number', 1)}.record",
+            workflow_id=str(state.get("workflow_id") or state["pm_mandate"]["workflow_id"]),
+            mandate_task_id=str(state["pm_mandate"]["task_id"]),
+            result_references=list(reporting_output.get("surviving_candidate_ids") or []),
+            critiques=[
+                str(c) for c in (risk_response.get("critiques") or [])
+            ] if isinstance(risk_response.get("critiques"), list) else [],
+            pm_decision=pm_decision,
+            lessons_for_future_rounds=(
+                [pm_decision.rationale] if pm_decision.rationale else []
+            ),
+        )
+        record_id = await memory_store.record(record)
+        return {"memory_record_id": record_id}
 
     # --- Real Fundamental Trader ---
     fundamental_agent = FundamentalTraderAgent(
@@ -420,20 +469,65 @@ async def main(mandate_path: Path | None = None) -> None:
         })
         return {"quant_trader_package": package.model_dump(mode="json")}
 
-    # --- Stub Technical Trader (see docstring) ---
-    def technical_trader_node(state: Mapping[str, Any]) -> dict[str, Any]:
-        current_mandate = PMMandate.model_validate(state["pm_mandate"])
-        package = _stub_technical_trader_package(
-            current_mandate,
-            int(state.get("round_number", 1)),
+    # --- Technical Trader: real if credentials are configured, else stubbed ---
+    # No API key was available to verify a live model call end-to-end in the
+    # environment this integration was written in - see this module's
+    # docstring. Everything up to the actual provider call (imports, model
+    # client construction, engine/executor registration, runtime
+    # construction) has been verified to wire together correctly; a live
+    # smoke test with real credentials is the one thing left for whoever
+    # runs this with a real TECHNICAL_TRADER_MODEL_PROVIDER / API key set.
+    try:
+        technical_execution_policy = TechnicalExecutionPolicy()
+        technical_model_client = create_technical_model_client_from_env(
+            execution_policy=technical_execution_policy,
         )
-        return {"technical_trader_package": package.model_dump(mode="json")}
+        technical_backtest_engine = DeterministicBacktestEngine(
+            data_resolver=OfflineBacktestResolver(),
+            strategy_executors=list(TECHNICAL_STRATEGY_EXECUTORS),
+        )
+        technical_runtime = create_technical_trader_runtime(
+            model_client=technical_model_client,
+            data_service=OfflineDataService(),
+            backtest_engine=technical_backtest_engine,
+            available_executors=[e.executor_id for e in TECHNICAL_STRATEGY_EXECUTORS],
+            validation_split_policy=PercentileValidationSplitPolicy(train_fraction=0.9),
+            benchmark_symbol=TECHNICAL_TRADER_BENCHMARK_SYMBOL,
+            execution_policy=technical_execution_policy,
+        )
+        print(
+            "Technical Trader: REAL - "
+            f"{technical_model_client.__class__.__name__} configured from environment."
+        )
+
+        async def technical_trader_node(state: Mapping[str, Any]) -> dict[str, Any]:
+            current_mandate = PMMandate.model_validate(state["pm_mandate"])
+            package = await technical_runtime.research(current_mandate, execution_context={
+                "run_id": RUN_ID, "round_number": state.get("round_number", 1), "attempt": 1,
+            })
+            return {"technical_trader_package": package.model_dump(mode="json")}
+
+    except TechnicalModelConfigurationError as config_error:
+        print(
+            "Technical Trader: STUBBED - no model provider configured "
+            f"({config_error}). Set TECHNICAL_TRADER_MODEL_PROVIDER, "
+            "TECHNICAL_TRADER_MODEL, and the matching API key to use the "
+            "real agent - see agents/technical_trader/docs/integration.md."
+        )
+
+        def technical_trader_node(state: Mapping[str, Any]) -> dict[str, Any]:
+            current_mandate = PMMandate.model_validate(state["pm_mandate"])
+            package = _stub_technical_trader_package(
+                current_mandate,
+                int(state.get("round_number", 1)),
+            )
+            return {"technical_trader_package": package.model_dump(mode="json")}
 
     # --- Real Risk + Reporting ---
     risk_agent = RiskAgentImpl()
     reporting = RecordingReportingNode(ReportingAgentImpl())
 
-    nodes = ProductionNodeSet(
+    return ProductionNodeSet(
         memory_read=memory_read_node,
         pm_intake=pm_intake_node,
         technical_trader=technical_trader_node,
@@ -442,26 +536,15 @@ async def main(mandate_path: Path | None = None) -> None:
         risk_review=make_risk_review_node(risk_agent),
         reporting=reporting,
         memory_write=memory_write_node,
-        pm_decision=pm_decision_node,
+        # pm_decision intentionally omitted: the graph defaults to its own
+        # real human_pm_decision_node (a durable LangGraph interrupt), which
+        # is what makes an actual live PM decision - via the dashboard,
+        # resumed by this script's --resume mode - possible instead of a
+        # scripted stand-in.
     )
-    compiled = compile_production_workflow(nodes, checkpointer=MemorySaver(), max_rounds=1)
 
-    print("Running one full research-loop round...")
-    print(f"  Real: Fundamental Trader, Quant Trader, Risk Agent, Reporting Agent")
-    print(f"  Stubbed: Technical Trader (no ModelClient wired yet - see docstring)")
-    print(f"  Scripted: PM intake/decision, Memory read/write")
-    print()
 
-    runner = WorkflowRunner(
-        compiled_graph=compiled,
-        snapshot_writer=write_dashboard_snapshot,
-    )
-    final_state = await runner.start_workflow(
-        {"pm_mandate": mandate.model_dump(mode="json"), "run_id": mandate.workflow_id},
-        publish_progress=True,
-    )
-    print("Dashboard snapshot written to dashboard/data/workflow_snapshot.json")
-
+def _print_state_summary(final_state: Mapping[str, Any]) -> None:
     print("=== Trader packages ===")
     for key in ("technical_trader_package", "fundamental_trader_package", "quant_trader_package"):
         pkg = final_state.get(key)
@@ -481,6 +564,16 @@ async def main(mandate_path: Path | None = None) -> None:
         print(f"surviving_candidate_ids: {reporting_output.get('surviving_candidate_ids')}")
 
     print()
+    if final_state.get("pending_human_action"):
+        print("=== Awaiting PM decision ===")
+        print(
+            "The graph paused at a durable interrupt for round "
+            f"{final_state.get('round_number', 1)}. Resume with:\n"
+            "  python scripts/run_full_research_loop_demo.py --resume "
+            f"--run-id {final_state.get('workflow_id')} --decision-json <path>"
+        )
+        return
+
     print("=== PM decision ===")
     pm_decision = final_state.get("pm_decision")
     if pm_decision:
@@ -490,14 +583,89 @@ async def main(mandate_path: Path | None = None) -> None:
     print(f"memory_record_id: {final_state.get('memory_record_id')}")
 
 
+async def main(
+    mandate_path: Path | None = None,
+    *,
+    resume: bool = False,
+    run_id: str | None = None,
+    decision_path: Path | None = None,
+) -> None:
+    if langgraph_missing:
+        print("langgraph is not installed - run: pip install -e '.[langgraph]'")
+        return
+
+    CHECKPOINT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    memory_store = FileBackedMemoryStore(MEMORY_STORE_DIR)
+
+    async with AsyncSqliteSaver.from_conn_string(str(CHECKPOINT_DB_PATH)) as checkpointer:
+        nodes = _build_nodes(memory_store)
+        # max_rounds > 1 so "request another round" can actually loop back
+        # instead of being rejected by the graph's own round-limit check.
+        compiled = compile_production_workflow(nodes, checkpointer=checkpointer, max_rounds=5)
+        runner = WorkflowRunner(compiled_graph=compiled, snapshot_writer=write_dashboard_snapshot)
+
+        if resume:
+            if not run_id or not decision_path:
+                print("--resume requires both --run-id and --decision-json")
+                return
+            decision_payload = json.loads(decision_path.read_text(encoding="utf-8"))
+            pm_decision = decision_payload.get("pm_decision", decision_payload)
+            state_update = decision_payload.get("state_update")
+            print(f"Resuming workflow {run_id} with decision "
+                  f"{pm_decision.get('decision')!r}...")
+            final_state = await runner.resume_workflow(
+                run_id, pm_decision, state_update=state_update,
+            )
+        else:
+            mandate, payload = _load_mandate_and_payload(mandate_path)
+            workflow_input: dict[str, Any] = {
+                "pm_mandate": mandate.model_dump(mode="json"),
+                "run_id": mandate.workflow_id,
+            }
+            if payload.get("active_specialists"):
+                workflow_input["active_specialists"] = payload["active_specialists"]
+
+            print("Running one research-loop round (or resuming to the next PM decision)...")
+            print("  Real: Fundamental Trader, Quant Trader, Risk Agent, Reporting Agent, Memory")
+            print("  Real (durable interrupt): PM decision")
+            print()
+            final_state = await runner.start_workflow(workflow_input, publish_progress=True)
+
+        print("Dashboard snapshot written to dashboard/data/workflow_snapshot.json")
+        _print_state_summary(final_state)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Run the offline research loop with an optional PM mandate JSON file."
+        description="Run or resume the offline research loop, optionally driven by dashboard JSON files."
     )
     parser.add_argument(
         "--mandate-json",
         type=Path,
-        help="Path to a PMMandate JSON file or a WorkflowInput JSON file.",
+        help="Path to a PMMandate JSON file or a WorkflowInput JSON file (start mode only).",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume a paused PM-decision interrupt instead of starting a new run.",
+    )
+    parser.add_argument(
+        "--run-id",
+        type=str,
+        help="workflow_id of the run to resume (required with --resume).",
+    )
+    parser.add_argument(
+        "--decision-json",
+        type=Path,
+        help=(
+            "Path to a JSON file with {\"pm_decision\": {...}, "
+            "\"state_update\": {...}} (required with --resume)."
+        ),
     )
     args = parser.parse_args()
-    asyncio.run(main(args.mandate_json))
+    asyncio.run(main(
+        args.mandate_json,
+        resume=args.resume,
+        run_id=args.run_id,
+        decision_path=args.decision_json,
+    ))

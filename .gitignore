@@ -18,3 +18,8 @@ build/
 # Local PM request emitted by the Streamlit live-pilot runner.
 dashboard/data/latest_pm_mandate.json
 dashboard/data/live_workflow.log
+
+# Local durable-interrupt checkpoints and recorded Memory - runtime state
+# for the live pilot, not source, and workflow_id-specific to one machine.
+dashboard/data/workflow_checkpoints.sqlite
+dashboard/data/memory/
