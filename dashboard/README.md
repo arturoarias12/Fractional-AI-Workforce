@@ -1,50 +1,62 @@
-# Fractional AI Workforce — Clickable Mockup
+# Fractional AI Workforce Dashboard
 
-This is a Streamlit clickable mockup for a professor review of the Fractional AI Workforce project.
-It uses simulated data only. It does not execute trades, call an AI model, or connect to the team backend.
+A Streamlit dashboard for the team's ETF research workflow. It is a classroom
+prototype: it displays research workflow state and does not execute trades.
 
-The mockup follows the team workflow:
+## Quick start
 
-Human PM mandate → parallel Technical, Fundamental and Quant research → Risk Review → Reporting memo → PM decision → Memory for a future round.
-
-## Run locally
-
-### First-time setup (macOS / Linux)
+From the repository root:
 
 ```bash
-cd fractional-ai-dashboard
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/streamlit run app.py
+.venv/bin/pip install -e '.[langgraph,fundamental-demo,quant-demo]'
+.venv/bin/pip install -r dashboard/requirements.txt
+.venv/bin/streamlit run dashboard/app.py
 ```
 
-### First-time setup (Windows PowerShell)
+Open the local URL shown by Streamlit.
 
-```powershell
-cd fractional-ai-dashboard
-py -m venv .venv
-.\.venv\Scripts\pip install -r requirements.txt
-.\.venv\Scripts\streamlit run app.py
+To run the **local live pilot**, also place these team-provided files in the
+repository root :
+
+```text
+ETF_historical_prices.xlsx
+ETF_info.xlsx
 ```
 
-After the first-time setup, the final command in the matching section is all that is needed to start the app again.
+## What to use in the app
 
-## What the prototype demonstrates
+- **Current workflow** is the main path. Create a PM Research Request, keep
+  **Run local live pilot** on, and choose **Start Research**. The dashboard
+  starts the local workflow and then shows its exported result.
+- **Interactive demo (click-through)** is only for rehearsing the interface
+  with simulated data.
 
-- Current lifecycle state, task, input, output, timing, next step and error field for each agent.
-- The complete per-agent productivity metrics defined in the schema: task completion time, success rate, API cost, retry count and failed count.
-- A summary of the current research round on the dashboard.
-- A human PM decision and a Memory record that carries lessons into a later simulated round.
-- Simple next-round staffing controls after review. `Hire` restores a benched agent, `Bench` removes an active agent from the next round, and `Pivot` records a new next-round research focus. These controls do not modify a running or completed round.
+## What is connected now
 
-## Suggested Friday demo
+The local pilot runs this workflow:
 
-1. Start Research to show the parallel workflow.
-2. Choose **Advance Demo to Completed Review** to move directly to the review state.
-3. Open **Quant Trader** and show its complete schema fields, metrics, and Risk outcome. Optionally choose **Bench** or **Pivot** for the next round.
-4. Return to the dashboard and open the Research Report.
-5. Choose **Request Another Round**. Confirm that the dashboard advances from Round 04 to Round 05 and that Memory records the previous lesson.
+`PM mandate → Fundamental + Quant → Risk → Reporting → dashboard snapshot`
 
-## Scope
+- Fundamental, Quant, Risk, and Reporting use the team's current code.
+- The dashboard renders candidate rules, held-out backtest metrics, Risk review,
+  and the PM-facing comparison without requiring an LLM.
+- The dashboard reads workflow state through a stable snapshot contract:
+  `WorkflowState → workflow_adapter → workflow_snapshot.json → dashboard`.
 
-This is intentionally a clickable UI prototype. Live agent execution, live metrics, backend integration, persistent storage and real ETF/backtest data are later integration work.
+## Current limitations
+
+- Technical Trader is shown as unavailable because the repository does not yet
+  provide a concrete `ModelClient`.
+- The final PM decision is scripted as `Reject` in this one-round pilot.
+  Select / Reject / Another Round are not yet connected to workflow resume.
+- In the live pilot, as-of date, permitted ETF universe, and prohibited assets
+  affect Fundamental and Quant. Other PM mandate fields are preserved but do
+  not yet change their fixed research rules.
+- The ETF workbooks are offline historical data. The current fixture ends on
+  `2026-06-29`; it is for backtesting, not a live market recommendation.
+- Task duration is available from lifecycle state. Success rate, API cost,
+  retries, and failure counts show `N/A` until the workflow emits operational
+  event records.
+- Hire, Bench, and Pivot are simulated interactions only; they do not yet
+  change the next live workflow run.
