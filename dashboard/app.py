@@ -355,6 +355,24 @@ def agent_value(agent: dict[str, Any], name: str) -> Any:
     return agent.get(name, agent.get(legacy_names.get(name, name), "N/A"))
 
 
+def metrics_disclaimer(snapshot: dict[str, Any] | None) -> str:
+    """State where the productivity numbers on screen actually came from.
+
+    The two modes render through the same widgets, so without this the
+    illustrative demo figures are indistinguishable from measurements.
+    """
+
+    if snapshot:
+        return (
+            "Measured from this run's exported state. Success rate, API cost and "
+            "retry counts stay N/A until the workflow emits operational events."
+        )
+    return (
+        ":red[Simulated demo data.] These productivity figures are illustrative "
+        "placeholders for interface rehearsal — nothing here was measured."
+    )
+
+
 def display_value(value: Any) -> None:
     if isinstance(value, (dict, list)):
         st.json(value)
@@ -730,9 +748,11 @@ def dashboard() -> None:
     active = summary.get("active_agents") if snapshot else sum(status == "Active" for status in st.session_state.staffing.values())
     metric_cols[2].metric("Active Agents", f"{active} / 5")
     metric_cols[3].metric("Round Status", workflow.get("status") if snapshot else st.session_state.phase.title())
+    st.caption(metrics_disclaimer(snapshot))
 
     st.divider()
     st.markdown("#### Agent Workforce")
+    st.caption(metrics_disclaimer(snapshot))
     for row in [["technical", "fundamental", "quant"], ["risk", "reporting"]]:
         columns = st.columns(3)
         for col, agent_id in zip(columns, row):
@@ -813,7 +833,7 @@ def agent_detail() -> None:
         st.metric("API Cost", agent_value(agent, "api_cost"))
         st.metric("Retry Count", agent_value(agent, "retry_count"))
         st.metric("Failed Count", agent_value(agent, "failed_count"))
-        st.caption("Metrics are simulated in demo mode and exported from workflow events in snapshot mode.")
+        st.caption(metrics_disclaimer(snapshot))
 
     st.divider()
     if snapshot:
