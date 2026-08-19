@@ -48,6 +48,8 @@ Run (offline, no network - uses the real 120-ticker ETF fixtures):
 from __future__ import annotations
 
 import asyncio
+import argparse
+import json
 import pickle
 import sys
 from datetime import date, datetime, timezone
@@ -147,6 +149,9 @@ def _load_offline_panel() -> dict[str, tuple[PriceBar, ...]]:
 
 PANEL = _load_offline_panel()
 METADATA = _load_etf_metadata(REPO_ROOT / "ETF_info.xlsx")
+OFFLINE_DATA_MAX_DATE = max(
+    bar.timestamp.date() for bars in PANEL.values() for bar in bars
+)
 
 
 class OfflineDataService:
@@ -229,7 +234,10 @@ class OfflineBacktestResolver:
 # Stub Technical Trader node (see module docstring for why)
 # ---------------------------------------------------------------------------
 
-def _stub_technical_trader_package() -> TraderStrategyPackage:
+def _stub_technical_trader_package(
+    mandate: PMMandate,
+    round_number: int,
+) -> TraderStrategyPackage:
     """A realistic, schema-valid stand-in - NOT a real model call.
 
     Fills the graph's technical_trader slot so the full topology (3 trader
@@ -243,8 +251,10 @@ def _stub_technical_trader_package() -> TraderStrategyPackage:
     )
 
     lineage = TaskLineage(
-        workflow_id=WORKFLOW_ID,
-        task_id=f"{TASK_ID}.round-1.technical.trader",
+        workflow_id=mandate.workflow_id,
+        task_id=f"{mandate.task_id}.round-{round_number}.technical.trader",
+        parent_task_id=mandate.task_id,
+        source_task_id=mandate.task_id,
         attempt=1,
     )
     candidate = CandidateRuleSpecification(
@@ -270,7 +280,7 @@ def _stub_technical_trader_package() -> TraderStrategyPackage:
         candidate_id=candidate.candidate_id,
         trader_id=SpecialistId.TECHNICAL_TRADER,
         lineage=lineage,
-        mandate_reference={"workflow_id": WORKFLOW_ID, "task_id": TASK_ID, "as_of_date": date.today().isoformat()},
+        mandate_reference=mandate.reference(),
         status=RunStatus.FAILED,  # honestly not eligible - it's a stub, not a real result
         candidate_rule=candidate,
         constraint_assessment=MandateConstraintAssessment(
@@ -341,20 +351,38 @@ class RecordingReportingNode:
 # Main
 # ---------------------------------------------------------------------------
 
-async def main() -> None:
+def _load_mandate(mandate_path: Path | None) -> PMMandate:
+    """Load a dashboard-created mandate, or use the documented demo default."""
+
+    if mandate_path is None:
+        return PMMandate(
+            workflow_id=WORKFLOW_ID,
+            task_id=TASK_ID,
+            as_of_date=OFFLINE_DATA_MAX_DATE,
+            investment_objective=(
+                "Full research-loop integration demo across the 120-ETF universe."
+            ),
+            permitted_asset_universe=list(PANEL),
+        )
+
+    payload = json.loads(mandate_path.read_text(encoding="utf-8"))
+    raw_mandate = payload.get("pm_mandate", payload)
+    mandate = PMMandate.model_validate(raw_mandate)
+    if mandate.as_of_date > OFFLINE_DATA_MAX_DATE:
+        raise ValueError(
+            "The offline ETF fixture ends on "
+            f"{OFFLINE_DATA_MAX_DATE.isoformat()}, but the PM mandate requested "
+            f"{mandate.as_of_date.isoformat()}. Choose an available as-of date."
+        )
+    return mandate
+
+
+async def main(mandate_path: Path | None = None) -> None:
     if langgraph_missing:
         print("langgraph is not installed - run: pip install -e '.[langgraph]'")
         return
 
-    mandate = PMMandate(
-        workflow_id=WORKFLOW_ID,
-        task_id=TASK_ID,
-        as_of_date=date(2026, 6, 30),
-        investment_objective=(
-            "Full research-loop integration demo across the 120-ETF universe."
-        ),
-        permitted_asset_universe=list(PANEL),
-    )
+    mandate = _load_mandate(mandate_path)
 
     # --- Real Fundamental Trader ---
     fundamental_agent = FundamentalTraderAgent(
@@ -368,7 +396,8 @@ async def main() -> None:
     fundamental_runtime = FundamentalTraderRuntime(agent=fundamental_agent)
 
     async def fundamental_trader_node(state: Mapping[str, Any]) -> dict[str, Any]:
-        package = await fundamental_runtime.research(mandate, execution_context={
+        current_mandate = PMMandate.model_validate(state["pm_mandate"])
+        package = await fundamental_runtime.research(current_mandate, execution_context={
             "run_id": RUN_ID, "round_number": state.get("round_number", 1), "attempt": 1,
         })
         return {"fundamental_trader_package": package.model_dump(mode="json")}
@@ -385,15 +414,20 @@ async def main() -> None:
     quant_runtime = QuantTraderRuntime(agent=quant_agent)
 
     async def quant_trader_node(state: Mapping[str, Any]) -> dict[str, Any]:
-        package = await quant_runtime.research(mandate, execution_context={
+        current_mandate = PMMandate.model_validate(state["pm_mandate"])
+        package = await quant_runtime.research(current_mandate, execution_context={
             "run_id": RUN_ID, "round_number": state.get("round_number", 1), "attempt": 1,
         })
         return {"quant_trader_package": package.model_dump(mode="json")}
 
     # --- Stub Technical Trader (see docstring) ---
     def technical_trader_node(state: Mapping[str, Any]) -> dict[str, Any]:
-        del state
-        return {"technical_trader_package": _stub_technical_trader_package().model_dump(mode="json")}
+        current_mandate = PMMandate.model_validate(state["pm_mandate"])
+        package = _stub_technical_trader_package(
+            current_mandate,
+            int(state.get("round_number", 1)),
+        )
+        return {"technical_trader_package": package.model_dump(mode="json")}
 
     # --- Real Risk + Reporting ---
     risk_agent = RiskAgentImpl()
@@ -423,7 +457,7 @@ async def main() -> None:
         snapshot_writer=write_dashboard_snapshot,
     )
     final_state = await runner.start_workflow(
-        {"pm_mandate": mandate.model_dump(mode="json"), "run_id": RUN_ID},
+        {"pm_mandate": mandate.model_dump(mode="json"), "run_id": mandate.workflow_id},
         publish_progress=True,
     )
     print("Dashboard snapshot written to dashboard/data/workflow_snapshot.json")
@@ -457,4 +491,13 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(
+        description="Run the offline research loop with an optional PM mandate JSON file."
+    )
+    parser.add_argument(
+        "--mandate-json",
+        type=Path,
+        help="Path to a PMMandate JSON file or a WorkflowInput JSON file.",
+    )
+    args = parser.parse_args()
+    asyncio.run(main(args.mandate_json))

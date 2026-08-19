@@ -1,105 +1,62 @@
-# Fractional AI Workforce — Clickable Mockup
+# Fractional AI Workforce Dashboard
 
-This is a Streamlit dashboard for the Fractional AI Workforce project. It has two
-safe modes: an interactive simulated demo, and a read-only WorkflowState snapshot.
-It does not execute trades or invoke agents from the UI.
+A Streamlit dashboard for the team's ETF research workflow. It is a classroom
+prototype: it displays research workflow state and does not execute trades.
 
-The mockup follows the team workflow:
+## Quick start
 
-Human PM mandate → parallel Technical, Fundamental and Quant research → Risk Review → Reporting memo → PM decision → Memory for a future round.
-
-## Run locally
-
-### First-time setup (macOS / Linux)
+From the repository root:
 
 ```bash
-cd fractional-ai-dashboard
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/streamlit run app.py
+.venv/bin/pip install -e '.[langgraph,fundamental-demo,quant-demo]'
+.venv/bin/pip install -r dashboard/requirements.txt
+.venv/bin/streamlit run dashboard/app.py
 ```
 
-### First-time setup (Windows PowerShell)
+Open the local URL shown by Streamlit.
 
-```powershell
-cd fractional-ai-dashboard
-py -m venv .venv
-.\.venv\Scripts\pip install -r requirements.txt
-.\.venv\Scripts\streamlit run app.py
+To run the **local live pilot**, also place these team-provided files in the
+repository root :
+
+```text
+ETF_historical_prices.xlsx
+ETF_info.xlsx
 ```
 
-After the first-time setup, the final command in the matching section is all that is needed to start the app again.
+## What to use in the app
 
-## What the prototype demonstrates
+- **Current workflow** is the main path. Create a PM Research Request, keep
+  **Run local live pilot** on, and choose **Start Research**. The dashboard
+  starts the local workflow and then shows its exported result.
+- **Interactive demo (click-through)** is only for rehearsing the interface
+  with simulated data.
 
-- A controlled PM Research Request form that builds a schema-valid
-  `PMMandate`: objective, risk profile, horizon, as-of date, permitted universe,
-  prohibited assets, leverage and short-selling constraints, risk limits, and
-  optional PM notes. It also shows the exact top-level `WorkflowInput` handoff.
-- Current lifecycle state, task, input, output, timing, next step and error field for each agent.
-- The complete per-agent productivity metrics defined in the schema: task completion time, success rate, API cost, retry count and failed count.
-- A summary of the current research round on the dashboard.
-- A human PM decision and a Memory record that carries lessons into a later simulated round.
-- Simple next-round staffing controls after review. `Hire` restores a benched agent, `Bench` removes an active agent from the next round, and `Pivot` records a new next-round research focus. These controls do not modify a running or completed round.
+## What is connected now
 
-## Workflow snapshot integration
+The local pilot runs this workflow:
 
-The LangGraph workflow is the source of truth. The dashboard reads one exported
-JSON file rather than calling five agents independently:
+`PM mandate → Fundamental + Quant → Risk → Reporting → dashboard snapshot`
 
-`WorkflowState → dashboard/workflow_adapter.py → dashboard/data/workflow_snapshot.json → Streamlit`
+- Fundamental, Quant, Risk, and Reporting use the team's current code.
+- The dashboard renders candidate rules, held-out backtest metrics, Risk review,
+  and the PM-facing comparison without requiring an LLM.
+- The dashboard reads workflow state through a stable snapshot contract:
+  `WorkflowState → workflow_adapter → workflow_snapshot.json → dashboard`.
 
-The included `data/sample_workflow_state.json` and `data/workflow_snapshot.json`
-show the expected handoff using the currently available workflow fields. In the
-app sidebar, choose **Workflow snapshot** to view it. This mode is deliberately
-read-only: PM decisions and staffing controls stay in the workflow, then appear
-in the dashboard after a new export.
+## Current limitations
 
-For the final integrated version, submitting the PM Research Request should call
-the orchestration team's create-run/submit-mandate function with the displayed
-`WorkflowInput`. That function validates the `PMMandate`, assigns active traders,
-and exports an updated snapshot whenever the workflow reaches a meaningful state
-transition. The dashboard deliberately does not call individual trader files.
-
-The local `src/integration/WorkflowRunner` now provides that boundary for an
-already compiled graph: `start_workflow(workflow_input)` and
-`resume_workflow(run_id, pm_decision)`. The orchestration owner still needs to
-construct the graph with the real agent nodes and a durable checkpointer.
-
-## Live-workflow pilot (PR #6)
-
-The PR #6 integration demo now uses `WorkflowRunner` and writes a new dashboard
-snapshot after each graph checkpoint. To run it, first install the project
-extras and place the team fixture files `ETF_historical_prices.xlsx` and
-`ETF_info.xlsx` in the repository root:
-
-```bash
-pip install -e '.[langgraph,fundamental-demo,quant-demo]'
-python scripts/run_full_research_loop_demo.py
-```
-
-Open the Streamlit dashboard, select **Workflow snapshot**, and use **Refresh
-live snapshot** while the script is running. In this pilot, Fundamental, Quant,
-Risk, and Reporting are real graph nodes; Technical remains a clearly labeled
-stub because the repository does not yet provide a concrete `ModelClient`.
-
-To export a graph result that has already been saved as JSON:
-
-```bash
-cd dashboard
-python3 export_snapshot.py data/sample_workflow_state.json
-```
-
-This overwrites `data/workflow_snapshot.json` with the dashboard-safe version.
-When the orchestration team has a final `WorkflowState`, they can save that state
-as JSON and run the same command with its path.
-
-The adapter preserves every required productivity-metric field. Until the
-workflow emits `operational_events`, event-derived values (success rate, API
-cost, retries, and failures) intentionally show `N/A` instead of invented data.
-
-## Scope
-
-The interactive demo is intentionally a clickable prototype. Snapshot export is
-the first integration seam; live agent execution, live event emission, persistent
-storage and real ETF/backtest data remain team integration work.
+- Technical Trader is shown as unavailable because the repository does not yet
+  provide a concrete `ModelClient`.
+- The final PM decision is scripted as `Reject` in this one-round pilot.
+  Select / Reject / Another Round are not yet connected to workflow resume.
+- In the live pilot, as-of date, permitted ETF universe, and prohibited assets
+  affect Fundamental and Quant. Other PM mandate fields are preserved but do
+  not yet change their fixed research rules.
+- The ETF workbooks are offline historical data. The current fixture ends on
+  `2026-06-29`; it is for backtesting, not a live market recommendation.
+- Task duration is available from lifecycle state. Success rate, API cost,
+  retries, and failure counts show `N/A` until the workflow emits operational
+  event records.
+- Hire, Bench, and Pivot are simulated interactions only; they do not yet
+  change the next live workflow run.

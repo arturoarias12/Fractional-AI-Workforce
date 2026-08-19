@@ -14,3 +14,7 @@ build/
 # The Quant Trader demo expects ETF_historical_prices.xlsx in the repo root.
 *.xlsx
 .vendor/
+
+# Local PM request emitted by the Streamlit live-pilot runner.
+dashboard/data/latest_pm_mandate.json
+dashboard/data/live_workflow.log

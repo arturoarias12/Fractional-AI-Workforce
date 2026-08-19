@@ -1,53 +1,2697 @@
 {
   "schema_version": "0.1.0",
   "source": "workflow_state",
-  "generated_at": "2026-08-14T01:13:10-04:00",
-  "workflow": {"workflow_id": "demo-workflow-004", "run_id": "demo-run-004", "round_number": 4, "status": "Completed"},
+  "generated_at": "2026-08-19T02:24:45.811398-04:00",
+  "workflow": {
+    "workflow_id": "full-loop-demo-workflow",
+    "run_id": "full-loop-demo-workflow",
+    "round_number": 1,
+    "status": "Needs Review"
+  },
   "mandate": {
-    "workflow_id": "demo-workflow-004", "task_id": "pm-mandate-004", "as_of_date": "2026-08-14",
-    "investment_objective": "Find a moderate-risk ETF strategy with broad diversification.",
-    "risk_profile": "Moderate", "investment_horizon": "Three months",
-    "permitted_asset_universe": ["120-ETF universe"], "pm_notes": "Avoid high concentration."
+    "workflow_id": "full-loop-demo-workflow",
+    "task_id": "full-loop-demo-task",
+    "as_of_date": "2026-06-29",
+    "investment_objective": "Full research-loop integration demo across the 120-ETF universe.",
+    "risk_profile": null,
+    "investment_horizon": null,
+    "liquidity_requirements": null,
+    "permitted_asset_universe": [
+      "EWA",
+      "EWJ",
+      "EWC",
+      "EWU",
+      "XLP",
+      "XLF",
+      "XLY",
+      "XLB",
+      "XLI",
+      "XLK",
+      "XLE",
+      "XLU",
+      "QQQ",
+      "EWY",
+      "IVV",
+      "IJH",
+      "IJR",
+      "SMH",
+      "EWT",
+      "EZU",
+      "IGV",
+      "ILF",
+      "TLT",
+      "LQD",
+      "SHY",
+      "IEF",
+      "TIP",
+      "VTV",
+      "VNQ",
+      "IAU",
+      "PEJ",
+      "PBJ",
+      "FXE",
+      "XBI",
+      "DBC",
+      "USO",
+      "SLV",
+      "IHI",
+      "GDX",
+      "DXJ",
+      "KRE",
+      "FXB",
+      "FXF",
+      "FXA",
+      "FXC",
+      "DBB",
+      "DBA",
+      "FXY",
+      "UUP",
+      "UDN",
+      "PFF",
+      "BND",
+      "HYG",
+      "UNG",
+      "REM",
+      "FIW",
+      "VEA",
+      "MOO",
+      "MUB",
+      "IGF",
+      "EMB",
+      "TUR",
+      "TAN",
+      "WOOD",
+      "ICLN",
+      "FAN",
+      "AFK",
+      "SPXU",
+      "VNM",
+      "PALL",
+      "PPLT",
+      "SQQQ",
+      "SOXS",
+      "COPX",
+      "SIL",
+      "LIT",
+      "AMLP",
+      "EWZS",
+      "REMX",
+      "VNQI",
+      "XTN",
+      "ARGT",
+      "MCHI",
+      "SPLV",
+      "SKYY",
+      "XAR",
+      "SCHD",
+      "CPER",
+      "PICK",
+      "INDA",
+      "SMIN",
+      "IEMG",
+      "MTUM",
+      "BNDX",
+      "XYLD",
+      "FHLC",
+      "ASHR",
+      "JETS",
+      "CIBR",
+      "KSA",
+      "FINX",
+      "BOTZ",
+      "COW",
+      "VXX",
+      "DRIV",
+      "AIQ",
+      "XLC",
+      "ESPO",
+      "UFO",
+      "RYLD",
+      "URNM",
+      "AWAY",
+      "JEPI",
+      "BETZ",
+      "MSOS",
+      "ARKX",
+      "SVOL",
+      "SEA",
+      "JEPQ",
+      "RCTR"
+    ],
+    "prohibited_assets": [],
+    "leverage_constraints": null,
+    "short_selling_constraints": null,
+    "risk_limits": {},
+    "market_context": null,
+    "prior_round_lessons": [],
+    "rebalancing_preference": null,
+    "pm_notes": null
   },
   "agents": {
     "technical": {
-      "agent_id": "technical_trader_agent", "name": "Technical Trader", "role": "Price action, volume and indicators", "staffing_status": "Active", "state": "Completed",
-      "task": "pm-mandate-004.round-4.technical.trader", "input": {"round_number": 4}, "output": {"package_id": "technical-004", "status": "completed"},
-      "start_time": "2026-08-14T10:02:00+00:00", "end_time": "2026-08-14T10:05:06+00:00", "next_step": "trader_join", "error_message": null,
-      "metrics": {"task_completion_time": "0:03:06", "success_rate": "N/A", "api_cost": "N/A", "retry_count": "N/A", "failed_count": "N/A"},
-      "package": {"hypothesis": "Trend-following ETF screen", "backtest_result": {"metrics": {"return": 0.074}}}
+      "agent_id": "technical_trader_agent",
+      "name": "Technical Trader",
+      "role": "Price action, volume and indicators",
+      "staffing_status": "Active",
+      "state": "Failed",
+      "task": "full-loop-demo-task.round-1.technical.trader",
+      "input": {
+        "mandate_task_id": "full-loop-demo-task",
+        "round_number": 1
+      },
+      "output": {
+        "package_id": "full-loop-demo-task.round-1.technical.trader.package",
+        "status": "failed",
+        "eligible_for_risk_review": false
+      },
+      "start_time": "2026-08-19T06:24:45.776213Z",
+      "end_time": "2026-08-19T06:24:45.776363Z",
+      "next_step": "trader_join",
+      "error_message": "This demo run stubs Technical Trader because no ModelClient implementation exists yet in the repo. Not eligible for Risk review - see scripts/run_full_research_loop_demo.py.",
+      "metrics": {
+        "task_completion_time": "0:00:00.000150",
+        "success_rate": "N/A",
+        "api_cost": "N/A",
+        "retry_count": "N/A",
+        "failed_count": "N/A"
+      },
+      "package": {
+        "package_id": "full-loop-demo-task.round-1.technical.trader.package",
+        "candidate_id": "full-loop-demo-task.round-1.technical.trader.candidate",
+        "trader_id": "technical_trader_agent",
+        "lineage": {
+          "workflow_id": "full-loop-demo-workflow",
+          "task_id": "full-loop-demo-task.round-1.technical.trader",
+          "parent_task_id": "full-loop-demo-task",
+          "source_task_id": "full-loop-demo-task",
+          "attempt": 1
+        },
+        "mandate_reference": {
+          "workflow_id": "full-loop-demo-workflow",
+          "task_id": "full-loop-demo-task",
+          "as_of_date": "2026-06-29"
+        },
+        "status": "failed",
+        "hypothesis": null,
+        "data_request": null,
+        "data_usage": null,
+        "specialty_evidence": {},
+        "candidate_rule": {
+          "strategy_name": "[STUB] SMA crossover on QQQ",
+          "hypothesis": "[STUB - not a real model call] Illustrative placeholder only.",
+          "rule_summary": "[STUB] 20/50-day SMA crossover, long-only.",
+          "executor_id": "technical_trader.stub_demo.v0",
+          "asset_eligibility_logic": "[STUB]",
+          "signal_logic": "[STUB]",
+          "position_logic": "[STUB]",
+          "entry_logic": "[STUB]",
+          "exit_logic": "[STUB]",
+          "rebalancing_logic": "[STUB]",
+          "parameters": {
+            "ticker": "QQQ",
+            "short_window": 20,
+            "long_window": 50
+          },
+          "specialty_evidence_ids": [
+            "technical_trader.stub_demo"
+          ],
+          "specialty_evidence_usage": {
+            "technical_trader.stub_demo": "[STUB placeholder evidence]"
+          },
+          "required_data_fields": [],
+          "constraint_handling": [],
+          "implementation_notes": [],
+          "candidate_id": "full-loop-demo-task.round-1.technical.trader.candidate",
+          "trader_id": "technical_trader_agent",
+          "lineage": {
+            "workflow_id": "full-loop-demo-workflow",
+            "task_id": "full-loop-demo-task.round-1.technical.trader.candidate",
+            "parent_task_id": "full-loop-demo-task.round-1.technical.trader",
+            "source_task_id": "full-loop-demo-task",
+            "attempt": 1
+          }
+        },
+        "backtest_request": null,
+        "backtest_result": null,
+        "interpretation": null,
+        "constraint_assessment": {
+          "status": "not_evaluated",
+          "mappings": [],
+          "violations": [],
+          "requires_risk_validation": false
+        },
+        "failures": [
+          {
+            "stage": "technical_trader.stub_demo",
+            "message": "This demo run stubs Technical Trader because no ModelClient implementation exists yet in the repo. Not eligible for Risk review - see scripts/run_full_research_loop_demo.py.",
+            "retryable": false
+          }
+        ],
+        "eligible_for_risk_review": false,
+        "additional_fields": {}
+      }
     },
     "fundamental": {
-      "agent_id": "fundamental_trader_agent", "name": "Fundamental Trader", "role": "ETF fund characteristics and exposure", "staffing_status": "Benched", "state": "Idle",
-      "task": "Benched for this round", "input": null, "output": null, "start_time": null, "end_time": null, "next_step": "trader_join", "error_message": null,
-      "metrics": {"task_completion_time": "N/A", "success_rate": "N/A", "api_cost": "N/A", "retry_count": "N/A", "failed_count": "N/A"}, "package": {}
+      "agent_id": "fundamental_trader_agent",
+      "name": "Fundamental Trader",
+      "role": "ETF fund characteristics and exposure",
+      "staffing_status": "Active",
+      "state": "Completed",
+      "task": "full-loop-demo-task.round-1.fundamental.trader",
+      "input": {
+        "mandate_task_id": "full-loop-demo-task",
+        "round_number": 1
+      },
+      "output": {
+        "package_id": "full-loop-demo-task.round-1.fundamental.trader.package",
+        "status": "completed",
+        "eligible_for_risk_review": true
+      },
+      "start_time": "2026-08-19T06:24:42.285975Z",
+      "end_time": "2026-08-19T06:24:43.613596Z",
+      "next_step": "trader_join",
+      "error_message": null,
+      "metrics": {
+        "task_completion_time": "0:00:01.327621",
+        "success_rate": "N/A",
+        "api_cost": "N/A",
+        "retry_count": "N/A",
+        "failed_count": "N/A"
+      },
+      "package": {
+        "package_id": "full-loop-demo-task.round-1.fundamental.trader.package",
+        "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+        "trader_id": "fundamental_trader_agent",
+        "lineage": {
+          "workflow_id": "full-loop-demo-workflow",
+          "task_id": "full-loop-demo-task.round-1.fundamental.trader",
+          "parent_task_id": "full-loop-demo-task",
+          "source_task_id": "full-loop-demo-task",
+          "attempt": 1
+        },
+        "mandate_reference": {
+          "workflow_id": "full-loop-demo-workflow",
+          "task_id": "full-loop-demo-task",
+          "as_of_date": "2026-06-29"
+        },
+        "status": "completed",
+        "hypothesis": "DRIV is statistically likely to converge back toward the return of its \"Miscellaneous Sector\" category's major-issuer peers after diverging by an unusual amount.",
+        "data_request": {
+          "request_id": "full-loop-demo-task.round-1.fundamental.trader.data",
+          "lineage": {
+            "workflow_id": "full-loop-demo-workflow",
+            "task_id": "full-loop-demo-task.round-1.fundamental.trader.data",
+            "parent_task_id": "full-loop-demo-task.round-1.fundamental.trader",
+            "source_task_id": "full-loop-demo-task",
+            "attempt": 1
+          },
+          "trader_id": "fundamental_trader_agent",
+          "as_of_date": "2026-06-29",
+          "purpose": "Category-benchmark deviation discovery for the Fundamental Trader lens: price history for backtesting plus ETF category/fund-family metadata for the ISSUER_SCALE_TIER heuristic.",
+          "asset_universe": [
+            "EWA",
+            "EWJ",
+            "EWC",
+            "EWU",
+            "XLP",
+            "XLF",
+            "XLY",
+            "XLB",
+            "XLI",
+            "XLK",
+            "XLE",
+            "XLU",
+            "QQQ",
+            "EWY",
+            "IVV",
+            "IJH",
+            "IJR",
+            "SMH",
+            "EWT",
+            "EZU",
+            "IGV",
+            "ILF",
+            "TLT",
+            "LQD",
+            "SHY",
+            "IEF",
+            "TIP",
+            "VTV",
+            "VNQ",
+            "IAU",
+            "PEJ",
+            "PBJ",
+            "FXE",
+            "XBI",
+            "DBC",
+            "USO",
+            "SLV",
+            "IHI",
+            "GDX",
+            "DXJ",
+            "KRE",
+            "FXB",
+            "FXF",
+            "FXA",
+            "FXC",
+            "DBB",
+            "DBA",
+            "FXY",
+            "UUP",
+            "UDN",
+            "PFF",
+            "BND",
+            "HYG",
+            "UNG",
+            "REM",
+            "FIW",
+            "VEA",
+            "MOO",
+            "MUB",
+            "IGF",
+            "EMB",
+            "TUR",
+            "TAN",
+            "WOOD",
+            "ICLN",
+            "FAN",
+            "AFK",
+            "SPXU",
+            "VNM",
+            "PALL",
+            "PPLT",
+            "SQQQ",
+            "SOXS",
+            "COPX",
+            "SIL",
+            "LIT",
+            "AMLP",
+            "EWZS",
+            "REMX",
+            "VNQI",
+            "XTN",
+            "ARGT",
+            "MCHI",
+            "SPLV",
+            "SKYY",
+            "XAR",
+            "SCHD",
+            "CPER",
+            "PICK",
+            "INDA",
+            "SMIN",
+            "IEMG",
+            "MTUM",
+            "BNDX",
+            "XYLD",
+            "FHLC",
+            "ASHR",
+            "JETS",
+            "CIBR",
+            "KSA",
+            "FINX",
+            "BOTZ",
+            "COW",
+            "VXX",
+            "DRIV",
+            "AIQ",
+            "XLC",
+            "ESPO",
+            "UFO",
+            "RYLD",
+            "URNM",
+            "AWAY",
+            "JEPI",
+            "BETZ",
+            "MSOS",
+            "ARKX",
+            "SVOL",
+            "SEA",
+            "JEPQ",
+            "RCTR"
+          ],
+          "categories": [
+            "price_volume",
+            "etf_metadata"
+          ],
+          "fields": [
+            {
+              "name": "close",
+              "purpose": "Daily close prices for return/spread analysis.",
+              "required": true,
+              "point_in_time_required": true,
+              "publication_date_required": false
+            },
+            {
+              "name": "category",
+              "purpose": "Groups ETFs into comparable exposure sets.",
+              "required": true,
+              "point_in_time_required": false,
+              "publication_date_required": false
+            },
+            {
+              "name": "fund_family",
+              "purpose": "Drives the ISSUER_SCALE_TIER major/boutique split.",
+              "required": true,
+              "point_in_time_required": false,
+              "publication_date_required": false
+            }
+          ],
+          "required_fields": [
+            "close",
+            "category",
+            "fund_family"
+          ],
+          "optional_fields": [],
+          "start_date": null,
+          "end_date": "2026-06-29",
+          "frequency": "daily",
+          "provenance_required": true,
+          "additional_fields": {}
+        },
+        "data_usage": {
+          "response_id": "full-loop-demo-task.round-1.fundamental.trader.data.response",
+          "artifact_ids": [
+            "full-loop-demo-task.round-1.fundamental.trader.data.prices",
+            "full-loop-demo-task.round-1.fundamental.trader.data.meta"
+          ],
+          "data_references": [
+            "offline_fixture::prices",
+            "offline_fixture::etf_metadata"
+          ],
+          "provenance_ids": [
+            "full-loop-demo-task.round-1.fundamental.trader.data.prices.prov",
+            "full-loop-demo-task.round-1.fundamental.trader.data.meta.prov"
+          ],
+          "unavailable_fields": [],
+          "limitations": [],
+          "point_in_time_verified": false
+        },
+        "specialty_evidence": {
+          "ticker": "DRIV",
+          "category": "Miscellaneous Sector",
+          "fund_family": "Global X Funds",
+          "benchmark_tickers": [
+            "FAN",
+            "ICLN",
+            "TAN"
+          ],
+          "correlation": 0.7348341698393297,
+          "current_zscore": 1.5648221097484947,
+          "shared_trading_days": 1298,
+          "score": 1.1498847559632634
+        },
+        "candidate_rule": {
+          "strategy_name": "Category-benchmark deviation: DRIV vs. \"Miscellaneous Sector\" major-tier peers",
+          "hypothesis": "DRIV is statistically likely to converge back toward the return of its \"Miscellaneous Sector\" category's major-issuer peers after diverging by an unusual amount.",
+          "rule_summary": "Trade DRIV against the equal-weight return of its category's major-tier peers (FAN, ICLN, TAN): go long DRIV when its z-score deviation falls to -1.5, exit back to cash once it recovers to -0.25.",
+          "executor_id": "fundamental_trader.category_benchmark_deviation.v1",
+          "asset_eligibility_logic": "Requires point-in-time history for DRIV and all of FAN, ICLN, TAN covering at least 20 trading days at every rebalance.",
+          "signal_logic": "Daily z-score of the return spread between DRIV and the equal-weight return of its major-tier category peers, over a trailing 20-day rolling window.",
+          "position_logic": "Single position: fully allocate to the long leg when in the trade, fully in cash otherwise. No shorting; max gross leverage 1.0x.",
+          "entry_logic": "Enter when the spread z-score falls to or below -1.5.",
+          "exit_logic": "Exit when the spread z-score rises back to or above -0.25.",
+          "rebalancing_logic": "Rebalances only when the entry/exit condition changes; otherwise holds the current position unchanged.",
+          "parameters": {
+            "ticker": "DRIV",
+            "category": "Miscellaneous Sector",
+            "lookback_days": 20,
+            "entry_zscore": 1.5,
+            "exit_zscore": 0.25,
+            "benchmark_tickers": [
+              "FAN",
+              "ICLN",
+              "TAN"
+            ]
+          },
+          "specialty_evidence_ids": [
+            "fundamental_trader.category_scan.DRIV"
+          ],
+          "specialty_evidence_usage": {
+            "fundamental_trader.category_scan.DRIV": "Category-benchmark correlation and deviation z-score evidence used to select this ticker and its lookback window."
+          },
+          "required_data_fields": [
+            "close",
+            "category",
+            "fund_family"
+          ],
+          "constraint_handling": [
+            "Long-only, single-ticker, unlevered - stays within a research-stage mandate's default risk footprint."
+          ],
+          "implementation_notes": [
+            "DRIV (Global X Funds, boutique tier) has diverged +1.56 std from its \"Miscellaneous Sector\" category benchmark (FAN, ICLN, TAN, major tier) over the trailing 20 trading days, with 0.73 return correlation to that benchmark historically.",
+            "Category benchmark is an in-house equal-weight average of major-tier issuer peers in the same ETF_info.xlsx category, not a licensed index.",
+            "ISSUER_SCALE_TIER (major vs. boutique fund family) substitutes for expense ratio / dividend yield / NAV premium-discount, which are not populated in this fixture."
+          ],
+          "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+          "trader_id": "fundamental_trader_agent",
+          "lineage": {
+            "workflow_id": "full-loop-demo-workflow",
+            "task_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+            "parent_task_id": "full-loop-demo-task.round-1.fundamental.trader",
+            "source_task_id": "full-loop-demo-task",
+            "attempt": 1
+          }
+        },
+        "backtest_request": {
+          "request_id": "full-loop-demo-task.round-1.fundamental.trader.backtest",
+          "trader_id": "fundamental_trader_agent",
+          "lineage": {
+            "workflow_id": "full-loop-demo-workflow",
+            "task_id": "full-loop-demo-task.round-1.fundamental.trader.backtest",
+            "parent_task_id": "full-loop-demo-task.round-1.fundamental.trader",
+            "source_task_id": "full-loop-demo-task",
+            "attempt": 1
+          },
+          "execution_context": {
+            "run_id": "full-loop-demo-run",
+            "round_number": 1,
+            "attempt": 1,
+            "canonical_universe_id": null,
+            "evaluation_policy_id": null
+          },
+          "as_of_date": "2026-06-29",
+          "candidate": {
+            "strategy_name": "Category-benchmark deviation: DRIV vs. \"Miscellaneous Sector\" major-tier peers",
+            "hypothesis": "DRIV is statistically likely to converge back toward the return of its \"Miscellaneous Sector\" category's major-issuer peers after diverging by an unusual amount.",
+            "rule_summary": "Trade DRIV against the equal-weight return of its category's major-tier peers (FAN, ICLN, TAN): go long DRIV when its z-score deviation falls to -1.5, exit back to cash once it recovers to -0.25.",
+            "executor_id": "fundamental_trader.category_benchmark_deviation.v1",
+            "asset_eligibility_logic": "Requires point-in-time history for DRIV and all of FAN, ICLN, TAN covering at least 20 trading days at every rebalance.",
+            "signal_logic": "Daily z-score of the return spread between DRIV and the equal-weight return of its major-tier category peers, over a trailing 20-day rolling window.",
+            "position_logic": "Single position: fully allocate to the long leg when in the trade, fully in cash otherwise. No shorting; max gross leverage 1.0x.",
+            "entry_logic": "Enter when the spread z-score falls to or below -1.5.",
+            "exit_logic": "Exit when the spread z-score rises back to or above -0.25.",
+            "rebalancing_logic": "Rebalances only when the entry/exit condition changes; otherwise holds the current position unchanged.",
+            "parameters": {
+              "ticker": "DRIV",
+              "category": "Miscellaneous Sector",
+              "lookback_days": 20,
+              "entry_zscore": 1.5,
+              "exit_zscore": 0.25,
+              "benchmark_tickers": [
+                "FAN",
+                "ICLN",
+                "TAN"
+              ]
+            },
+            "specialty_evidence_ids": [
+              "fundamental_trader.category_scan.DRIV"
+            ],
+            "specialty_evidence_usage": {
+              "fundamental_trader.category_scan.DRIV": "Category-benchmark correlation and deviation z-score evidence used to select this ticker and its lookback window."
+            },
+            "required_data_fields": [
+              "close",
+              "category",
+              "fund_family"
+            ],
+            "constraint_handling": [
+              "Long-only, single-ticker, unlevered - stays within a research-stage mandate's default risk footprint."
+            ],
+            "implementation_notes": [
+              "DRIV (Global X Funds, boutique tier) has diverged +1.56 std from its \"Miscellaneous Sector\" category benchmark (FAN, ICLN, TAN, major tier) over the trailing 20 trading days, with 0.73 return correlation to that benchmark historically.",
+              "Category benchmark is an in-house equal-weight average of major-tier issuer peers in the same ETF_info.xlsx category, not a licensed index.",
+              "ISSUER_SCALE_TIER (major vs. boutique fund family) substitutes for expense ratio / dividend yield / NAV premium-discount, which are not populated in this fixture."
+            ],
+            "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+            "trader_id": "fundamental_trader_agent",
+            "lineage": {
+              "workflow_id": "full-loop-demo-workflow",
+              "task_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+              "parent_task_id": "full-loop-demo-task.round-1.fundamental.trader",
+              "source_task_id": "full-loop-demo-task",
+              "attempt": 1
+            }
+          },
+          "plan": {
+            "requested_start_date": null,
+            "requested_end_date": "2026-06-29",
+            "frequency": "daily",
+            "benchmark": "DRIV",
+            "transaction_cost_assumptions": {},
+            "requested_metrics": [
+              "total_return",
+              "annualized_return",
+              "max_drawdown",
+              "sharpe_ratio",
+              "transaction_count"
+            ],
+            "validation_requirements": [
+              "held_out_out_of_sample_test"
+            ],
+            "held_out_evaluation_required": true,
+            "validation_split": {
+              "test_start_date": "2023-06-14",
+              "test_end_date": "2026-06-29"
+            }
+          },
+          "data_references": [
+            "offline_fixture::prices",
+            "offline_fixture::etf_metadata"
+          ],
+          "mandate_constraints": {
+            "prohibited_assets": [],
+            "permitted_asset_universe": [
+              "EWA",
+              "EWJ",
+              "EWC",
+              "EWU",
+              "XLP",
+              "XLF",
+              "XLY",
+              "XLB",
+              "XLI",
+              "XLK",
+              "XLE",
+              "XLU",
+              "QQQ",
+              "EWY",
+              "IVV",
+              "IJH",
+              "IJR",
+              "SMH",
+              "EWT",
+              "EZU",
+              "IGV",
+              "ILF",
+              "TLT",
+              "LQD",
+              "SHY",
+              "IEF",
+              "TIP",
+              "VTV",
+              "VNQ",
+              "IAU",
+              "PEJ",
+              "PBJ",
+              "FXE",
+              "XBI",
+              "DBC",
+              "USO",
+              "SLV",
+              "IHI",
+              "GDX",
+              "DXJ",
+              "KRE",
+              "FXB",
+              "FXF",
+              "FXA",
+              "FXC",
+              "DBB",
+              "DBA",
+              "FXY",
+              "UUP",
+              "UDN",
+              "PFF",
+              "BND",
+              "HYG",
+              "UNG",
+              "REM",
+              "FIW",
+              "VEA",
+              "MOO",
+              "MUB",
+              "IGF",
+              "EMB",
+              "TUR",
+              "TAN",
+              "WOOD",
+              "ICLN",
+              "FAN",
+              "AFK",
+              "SPXU",
+              "VNM",
+              "PALL",
+              "PPLT",
+              "SQQQ",
+              "SOXS",
+              "COPX",
+              "SIL",
+              "LIT",
+              "AMLP",
+              "EWZS",
+              "REMX",
+              "VNQI",
+              "XTN",
+              "ARGT",
+              "MCHI",
+              "SPLV",
+              "SKYY",
+              "XAR",
+              "SCHD",
+              "CPER",
+              "PICK",
+              "INDA",
+              "SMIN",
+              "IEMG",
+              "MTUM",
+              "BNDX",
+              "XYLD",
+              "FHLC",
+              "ASHR",
+              "JETS",
+              "CIBR",
+              "KSA",
+              "FINX",
+              "BOTZ",
+              "COW",
+              "VXX",
+              "DRIV",
+              "AIQ",
+              "XLC",
+              "ESPO",
+              "UFO",
+              "RYLD",
+              "URNM",
+              "AWAY",
+              "JEPI",
+              "BETZ",
+              "MSOS",
+              "ARKX",
+              "SVOL",
+              "SEA",
+              "JEPQ",
+              "RCTR"
+            ]
+          },
+          "additional_fields": {}
+        },
+        "backtest_result": {
+          "result_id": "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result",
+          "execution_attempt_id": "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1",
+          "request_id": "full-loop-demo-task.round-1.fundamental.trader.backtest",
+          "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+          "status": "succeeded",
+          "computed_by": "deterministic_backtest_engine",
+          "engine_name": "fractional_ai_workforce_backtest_engine",
+          "engine_version": "0.7.0",
+          "metrics": {
+            "total_return": -0.12633071746730817,
+            "annualized_return": -0.007404954167668065,
+            "max_drawdown": -0.34870074841779763,
+            "annualized_volatility": 0.05519820512328771,
+            "sharpe_ratio": -0.10682443319206107,
+            "transaction_count": 236,
+            "transaction_costs": 0.0,
+            "turnover": 205.15528350193952
+          },
+          "out_of_sample_metrics": {
+            "total_return": -0.05505774585261114,
+            "annualized_return": -0.01857837896049508,
+            "max_drawdown": -0.17217130874029418,
+            "annualized_volatility": 0.06847799296026881,
+            "sharpe_ratio": -0.23981797019551734,
+            "transaction_count": 84,
+            "transaction_costs": 0.0,
+            "turnover": 70.58692591109966
+          },
+          "benchmark_metrics": {
+            "total_return": 1.764670158080583,
+            "annualized_return": 0.13246886504843314,
+            "max_drawdown": -0.419320298673424,
+            "annualized_volatility": 0.2763815631255341,
+            "sharpe_ratio": 0.5886686486864119,
+            "transaction_count": 2,
+            "transaction_costs": 0.0,
+            "turnover": 3.764670158080583
+          },
+          "warnings": [],
+          "constraint_violations": [],
+          "artifact_references": [],
+          "ledger_entry": {
+            "ledger_entry_id": "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result.ledger",
+            "recorded_at": "2026-08-19T06:24:43.601185Z",
+            "run_id": "full-loop-demo-run",
+            "workflow_run_id": "full-loop-demo-run",
+            "workflow_id": "full-loop-demo-workflow",
+            "round_number": 1,
+            "task_id": "full-loop-demo-task.round-1.fundamental.trader.backtest",
+            "attempt": 1,
+            "request_id": "full-loop-demo-task.round-1.fundamental.trader.backtest",
+            "result_id": "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result",
+            "trader_id": "fundamental_trader_agent",
+            "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+            "strategy_name": "Category-benchmark deviation: DRIV vs. \"Miscellaneous Sector\" major-tier peers",
+            "executor_id": "fundamental_trader.category_benchmark_deviation.v1",
+            "parameters": {
+              "ticker": "DRIV",
+              "category": "Miscellaneous Sector",
+              "lookback_days": 20,
+              "entry_zscore": 1.5,
+              "exit_zscore": 0.25,
+              "benchmark_tickers": [
+                "FAN",
+                "ICLN",
+                "TAN"
+              ]
+            },
+            "canonical_universe_id": null,
+            "evaluation_policy_id": null,
+            "resolved_symbols": [
+              "DRIV",
+              "FAN",
+              "ICLN",
+              "TAN"
+            ],
+            "data_references": [
+              "offline_fixture"
+            ],
+            "requested_start_date": null,
+            "requested_end_date": "2026-06-29",
+            "resolved_start_time": "2008-04-15T00:00:00Z",
+            "resolved_end_time": "2026-06-29T00:00:00Z",
+            "benchmark": "DRIV",
+            "status": "succeeded",
+            "metrics": {
+              "total_return": -0.12633071746730817,
+              "annualized_return": -0.007404954167668065,
+              "max_drawdown": -0.34870074841779763,
+              "annualized_volatility": 0.05519820512328771,
+              "sharpe_ratio": -0.10682443319206107,
+              "transaction_count": 236,
+              "transaction_costs": 0.0,
+              "turnover": 205.15528350193952
+            },
+            "out_of_sample_metrics": {
+              "total_return": -0.05505774585261114,
+              "annualized_return": -0.01857837896049508,
+              "max_drawdown": -0.17217130874029418,
+              "annualized_volatility": 0.06847799296026881,
+              "sharpe_ratio": -0.23981797019551734,
+              "transaction_count": 84,
+              "transaction_costs": 0.0,
+              "turnover": 70.58692591109966
+            },
+            "benchmark_metrics": {
+              "total_return": 1.764670158080583,
+              "annualized_return": 0.13246886504843314,
+              "max_drawdown": -0.419320298673424,
+              "annualized_volatility": 0.2763815631255341,
+              "sharpe_ratio": 0.5886686486864119,
+              "transaction_count": 2,
+              "transaction_costs": 0.0,
+              "turnover": 3.764670158080583
+            },
+            "warnings": [],
+            "constraint_violations": [],
+            "artifact_references": [],
+            "failure_reason": null,
+            "additional_fields": {}
+          },
+          "ledger_references": [],
+          "failure_reason": null,
+          "additional_fields": {
+            "executor_id": "fundamental_trader.category_benchmark_deviation.v1",
+            "bar_count": 15699,
+            "data_references": [
+              "offline_fixture"
+            ],
+            "applied_assumptions": {
+              "initial_capital": 100000.0,
+              "commission_bps": 0.0,
+              "slippage_bps": 0.0,
+              "fill_price_field": "close",
+              "signal_delay_bars": 1,
+              "liquidate_at_end": true,
+              "allow_short": false,
+              "max_gross_leverage": 1.0,
+              "annualization_factor": 252
+            }
+          }
+        },
+        "interpretation": {
+          "summary": "Category-benchmark deviation on DRIV (\"Miscellaneous Sector\" category) versus its major-tier peer benchmark (FAN, ICLN, TAN). Training-window total return: -0.12633071746730817. Held-out test-window total return: -0.05505774585261114.",
+          "metric_interpretations": [
+            {
+              "metric_name": "total_return",
+              "interpretation": "Simple return over the equity curve. Training-window value: -0.12633071746730817.",
+              "result_section": "train_period"
+            },
+            {
+              "metric_name": "annualized_return",
+              "interpretation": "Annualized geometric return for the plan frequency. Training-window value: -0.007404954167668065.",
+              "result_section": "train_period"
+            },
+            {
+              "metric_name": "max_drawdown",
+              "interpretation": "Worst peak-to-trough equity decline. Training-window value: -0.34870074841779763.",
+              "result_section": "train_period"
+            },
+            {
+              "metric_name": "annualized_volatility",
+              "interpretation": "Sample volatility of periodic returns, annualized. Training-window value: 0.05519820512328771.",
+              "result_section": "train_period"
+            },
+            {
+              "metric_name": "sharpe_ratio",
+              "interpretation": "Annualized Sharpe of periodic returns (rf=0). Training-window value: -0.10682443319206107.",
+              "result_section": "train_period"
+            },
+            {
+              "metric_name": "transaction_count",
+              "interpretation": "Number of simulated trades. Training-window value: 236.",
+              "result_section": "train_period"
+            },
+            {
+              "metric_name": "transaction_costs",
+              "interpretation": "Total modeled commissions and slippage cost. Training-window value: 0.0.",
+              "result_section": "train_period"
+            },
+            {
+              "metric_name": "turnover",
+              "interpretation": "Gross reference notional divided by initial capital. Training-window value: 205.15528350193952.",
+              "result_section": "train_period"
+            },
+            {
+              "metric_name": "total_return",
+              "interpretation": "Simple return over the equity curve. Held-out test-window value: -0.05505774585261114.",
+              "result_section": "test_period"
+            },
+            {
+              "metric_name": "annualized_return",
+              "interpretation": "Annualized geometric return for the plan frequency. Held-out test-window value: -0.01857837896049508.",
+              "result_section": "test_period"
+            },
+            {
+              "metric_name": "max_drawdown",
+              "interpretation": "Worst peak-to-trough equity decline. Held-out test-window value: -0.17217130874029418.",
+              "result_section": "test_period"
+            },
+            {
+              "metric_name": "annualized_volatility",
+              "interpretation": "Sample volatility of periodic returns, annualized. Held-out test-window value: 0.06847799296026881.",
+              "result_section": "test_period"
+            },
+            {
+              "metric_name": "sharpe_ratio",
+              "interpretation": "Annualized Sharpe of periodic returns (rf=0). Held-out test-window value: -0.23981797019551734.",
+              "result_section": "test_period"
+            },
+            {
+              "metric_name": "transaction_count",
+              "interpretation": "Number of simulated trades. Held-out test-window value: 84.",
+              "result_section": "test_period"
+            },
+            {
+              "metric_name": "transaction_costs",
+              "interpretation": "Total modeled commissions and slippage cost. Held-out test-window value: 0.0.",
+              "result_section": "test_period"
+            },
+            {
+              "metric_name": "turnover",
+              "interpretation": "Gross reference notional divided by initial capital. Held-out test-window value: 70.58692591109966.",
+              "result_section": "test_period"
+            }
+          ],
+          "out_of_sample_assessment": "Held-out metrics are reported separately from training metrics above and were computed on a window the candidate's parameters were never tuned against.",
+          "strengths": [
+            "Category-grounded selection: DRIV (Global X Funds, boutique tier) has diverged +1.56 std from its \"Miscellaneous Sector\" category benchmark (FAN, ICLN, TAN, major tier) over the trailing 20 trading days, with 0.73 return correlation to that benchmark historically."
+          ],
+          "weaknesses": [],
+          "overfitting_risks": [
+            "This candidate was selected from a scan of every boutique-tier ticker across all populated categories in the permitted universe; a single strong-looking category deviation among many tested is exactly the kind of result that needs Risk's scrutiny for selection bias / cherry-picking, independent of how the backtest itself performed.",
+            "The ISSUER_SCALE_TIER split (major vs. boutique fund family) is a heuristic substitute for fund-level fundamentals (expense ratio, dividend yield, NAV premium/discount) that are not populated in ETF_info.xlsx for this universe - see docs/fundamental_trader.md. Risk should weigh this candidate knowing the underlying signal is a liquidity/issuer-scale proxy, not a direct fundamental valuation gap."
+          ],
+          "limitations": [
+            "No transaction-cost stress testing beyond the engine's configured commission/slippage assumptions.",
+            "Fund-level fundamentals (expense ratio, dividend yield, NAV premium/discount) are unavailable in the current data fixture; category + issuer-scale tier is used as a proxy signal instead."
+          ],
+          "mandate_alignment": [
+            "Long-only, single-ticker exposure; no leverage or short selling used."
+          ],
+          "open_questions": [
+            "Should Fundamental Trader propose more than one candidate per round so Risk can compare survivors instead of reviewing a single ticker?",
+            "Would a licensed category benchmark (vs. an equal-weight major-tier average computed in-house) change which deviations look significant?"
+          ],
+          "confidence": {
+            "level": "medium",
+            "rationale": "Backtest status was succeeded; metrics were computed by the deterministic engine, not estimated.",
+            "uncertainty_drivers": [
+              "Interpretation is template-generated, not model-authored; treat language here as a structured summary of the metrics, not analysis.",
+              "Category benchmark is an equal-weight average of major-tier peers in the same category, not a licensed index - see implementation_notes."
+            ]
+          }
+        },
+        "constraint_assessment": {
+          "status": "declared_aligned",
+          "mappings": [
+            "Long-only single-ticker exposure (DRIV) stays within a one-position-at-a-time risk footprint suitable for a research-stage mandate."
+          ],
+          "violations": [],
+          "requires_risk_validation": true
+        },
+        "failures": [],
+        "eligible_for_risk_review": true,
+        "additional_fields": {}
+      }
     },
     "quant": {
-      "agent_id": "quant_trader_agent", "name": "Quant Trader", "role": "Statistical anomalies and correlations", "staffing_status": "Active", "state": "Completed",
-      "task": "pm-mandate-004.round-4.quant.trader", "input": {"round_number": 4}, "output": {"package_id": "quant-004", "status": "completed"},
-      "start_time": "2026-08-14T10:02:00+00:00", "end_time": "2026-08-14T10:07:11+00:00", "next_step": "trader_join", "error_message": null,
-      "metrics": {"task_completion_time": "0:05:11", "success_rate": "N/A", "api_cost": "N/A", "retry_count": "N/A", "failed_count": "N/A"},
-      "package": {"hypothesis": "Cross-asset mean-reversion screen", "backtest_result": {"metrics": {"return": 0.081}}}
+      "agent_id": "quant_trader_agent",
+      "name": "Quant Trader",
+      "role": "Statistical anomalies and correlations",
+      "staffing_status": "Active",
+      "state": "Completed",
+      "task": "full-loop-demo-task.round-1.quant.trader",
+      "input": {
+        "mandate_task_id": "full-loop-demo-task",
+        "round_number": 1
+      },
+      "output": {
+        "package_id": "full-loop-demo-task.round-1.quant.trader.package",
+        "status": "completed",
+        "eligible_for_risk_review": true
+      },
+      "start_time": "2026-08-19T06:24:43.613910Z",
+      "end_time": "2026-08-19T06:24:45.775976Z",
+      "next_step": "trader_join",
+      "error_message": null,
+      "metrics": {
+        "task_completion_time": "0:00:02.162066",
+        "success_rate": "N/A",
+        "api_cost": "N/A",
+        "retry_count": "N/A",
+        "failed_count": "N/A"
+      },
+      "package": {
+        "package_id": "full-loop-demo-task.round-1.quant.trader.package",
+        "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+        "trader_id": "quant_trader_agent",
+        "lineage": {
+          "workflow_id": "full-loop-demo-workflow",
+          "task_id": "full-loop-demo-task.round-1.quant.trader",
+          "parent_task_id": "full-loop-demo-task",
+          "source_task_id": "full-loop-demo-task",
+          "attempt": 1
+        },
+        "mandate_reference": {
+          "workflow_id": "full-loop-demo-workflow",
+          "task_id": "full-loop-demo-task",
+          "as_of_date": "2026-06-29"
+        },
+        "status": "completed",
+        "hypothesis": "IGV is statistically likely to converge back toward its historical price relationship with JEPQ after diverging by an unusual amount.",
+        "data_request": {
+          "request_id": "full-loop-demo-task.round-1.quant.trader.data",
+          "lineage": {
+            "workflow_id": "full-loop-demo-workflow",
+            "task_id": "full-loop-demo-task.round-1.quant.trader.data",
+            "parent_task_id": "full-loop-demo-task.round-1.quant.trader",
+            "source_task_id": "full-loop-demo-task",
+            "attempt": 1
+          },
+          "trader_id": "quant_trader_agent",
+          "as_of_date": "2026-06-29",
+          "purpose": "Cross-asset correlation and mean-reversion pair discovery for the Quant Trader lens.",
+          "asset_universe": [
+            "EWA",
+            "EWJ",
+            "EWC",
+            "EWU",
+            "XLP",
+            "XLF",
+            "XLY",
+            "XLB",
+            "XLI",
+            "XLK",
+            "XLE",
+            "XLU",
+            "QQQ",
+            "EWY",
+            "IVV",
+            "IJH",
+            "IJR",
+            "SMH",
+            "EWT",
+            "EZU",
+            "IGV",
+            "ILF",
+            "TLT",
+            "LQD",
+            "SHY",
+            "IEF",
+            "TIP",
+            "VTV",
+            "VNQ",
+            "IAU",
+            "PEJ",
+            "PBJ",
+            "FXE",
+            "XBI",
+            "DBC",
+            "USO",
+            "SLV",
+            "IHI",
+            "GDX",
+            "DXJ",
+            "KRE",
+            "FXB",
+            "FXF",
+            "FXA",
+            "FXC",
+            "DBB",
+            "DBA",
+            "FXY",
+            "UUP",
+            "UDN",
+            "PFF",
+            "BND",
+            "HYG",
+            "UNG",
+            "REM",
+            "FIW",
+            "VEA",
+            "MOO",
+            "MUB",
+            "IGF",
+            "EMB",
+            "TUR",
+            "TAN",
+            "WOOD",
+            "ICLN",
+            "FAN",
+            "AFK",
+            "SPXU",
+            "VNM",
+            "PALL",
+            "PPLT",
+            "SQQQ",
+            "SOXS",
+            "COPX",
+            "SIL",
+            "LIT",
+            "AMLP",
+            "EWZS",
+            "REMX",
+            "VNQI",
+            "XTN",
+            "ARGT",
+            "MCHI",
+            "SPLV",
+            "SKYY",
+            "XAR",
+            "SCHD",
+            "CPER",
+            "PICK",
+            "INDA",
+            "SMIN",
+            "IEMG",
+            "MTUM",
+            "BNDX",
+            "XYLD",
+            "FHLC",
+            "ASHR",
+            "JETS",
+            "CIBR",
+            "KSA",
+            "FINX",
+            "BOTZ",
+            "COW",
+            "VXX",
+            "DRIV",
+            "AIQ",
+            "XLC",
+            "ESPO",
+            "UFO",
+            "RYLD",
+            "URNM",
+            "AWAY",
+            "JEPI",
+            "BETZ",
+            "MSOS",
+            "ARKX",
+            "SVOL",
+            "SEA",
+            "JEPQ",
+            "RCTR"
+          ],
+          "categories": [
+            "price_volume"
+          ],
+          "fields": [
+            {
+              "name": "close",
+              "purpose": "Daily close prices for correlation and spread analysis.",
+              "required": true,
+              "point_in_time_required": true,
+              "publication_date_required": false
+            }
+          ],
+          "required_fields": [
+            "close"
+          ],
+          "optional_fields": [],
+          "start_date": null,
+          "end_date": "2026-06-29",
+          "frequency": "daily",
+          "provenance_required": true,
+          "additional_fields": {}
+        },
+        "data_usage": {
+          "response_id": "full-loop-demo-task.round-1.quant.trader.data.response",
+          "artifact_ids": [
+            "full-loop-demo-task.round-1.quant.trader.data.prices",
+            "full-loop-demo-task.round-1.quant.trader.data.meta"
+          ],
+          "data_references": [
+            "offline_fixture::prices",
+            "offline_fixture::etf_metadata"
+          ],
+          "provenance_ids": [
+            "full-loop-demo-task.round-1.quant.trader.data.prices.prov",
+            "full-loop-demo-task.round-1.quant.trader.data.meta.prov"
+          ],
+          "unavailable_fields": [],
+          "limitations": [],
+          "point_in_time_verified": false
+        },
+        "specialty_evidence": {
+          "ticker_a": "IGV",
+          "ticker_b": "JEPQ",
+          "correlation": 0.8903,
+          "half_life_days": 7.89,
+          "shared_trading_days": 278,
+          "score": 0.7049
+        },
+        "candidate_rule": {
+          "strategy_name": "Cross-asset spread mean reversion: IGV/JEPQ",
+          "hypothesis": "IGV is statistically likely to converge back toward its historical price relationship with JEPQ after diverging by an unusual amount.",
+          "rule_summary": "Trade the IGV/JEPQ price ratio: go long IGV when its z-score versus JEPQ falls to -1.5, exit back to cash once it recovers to -0.25.",
+          "executor_id": "quant_trader.cross_asset_spread_mean_reversion.v1",
+          "asset_eligibility_logic": "Requires point-in-time history for both IGV and JEPQ covering at least 16 trading days at every rebalance.",
+          "signal_logic": "Daily z-score of the IGV/JEPQ closing-price ratio over a trailing 16-day rolling window.",
+          "position_logic": "Single position: fully allocate to the long leg when in the trade, fully in cash otherwise. No shorting; max gross leverage 1.0x.",
+          "entry_logic": "Enter when the ratio z-score falls to or below -1.5.",
+          "exit_logic": "Exit when the ratio z-score rises back to or above -0.25.",
+          "rebalancing_logic": "Rebalances only when the entry/exit condition changes; otherwise holds the current position unchanged.",
+          "parameters": {
+            "ticker_a": "IGV",
+            "ticker_b": "JEPQ",
+            "lookback_days": 16,
+            "entry_zscore": 1.5,
+            "exit_zscore": 0.25
+          },
+          "specialty_evidence_ids": [
+            "quant_trader.pair_scan.IGV_JEPQ"
+          ],
+          "specialty_evidence_usage": {
+            "quant_trader.pair_scan.IGV_JEPQ": "Correlation and AR(1) mean-reversion half-life evidence used to select this pair and size its lookback window."
+          },
+          "required_data_fields": [
+            "close"
+          ],
+          "constraint_handling": [
+            "Long-only, single-pair, unlevered - stays within a research-stage mandate's default risk footprint."
+          ],
+          "implementation_notes": [
+            "IGV and JEPQ moved together closely during the training window (correlation 0.8903 over 278 shared trading days), and their price spread snapped back toward its average in about 7.89 trading days. That combination - a real relationship plus a measurable pull back to normal - is what makes this a testable mean-reversion anomaly. Trade the spread: buy IGV when it is cheap versus JEPQ by 1.5 standard deviations, exit as the gap closes back to 0.25 standard deviations."
+          ],
+          "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+          "trader_id": "quant_trader_agent",
+          "lineage": {
+            "workflow_id": "full-loop-demo-workflow",
+            "task_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+            "parent_task_id": "full-loop-demo-task.round-1.quant.trader",
+            "source_task_id": "full-loop-demo-task",
+            "attempt": 1
+          }
+        },
+        "backtest_request": {
+          "request_id": "full-loop-demo-task.round-1.quant.trader.backtest",
+          "trader_id": "quant_trader_agent",
+          "lineage": {
+            "workflow_id": "full-loop-demo-workflow",
+            "task_id": "full-loop-demo-task.round-1.quant.trader.backtest",
+            "parent_task_id": "full-loop-demo-task.round-1.quant.trader",
+            "source_task_id": "full-loop-demo-task",
+            "attempt": 1
+          },
+          "execution_context": {
+            "run_id": "full-loop-demo-run",
+            "round_number": 1,
+            "attempt": 1,
+            "canonical_universe_id": null,
+            "evaluation_policy_id": null
+          },
+          "as_of_date": "2026-06-29",
+          "candidate": {
+            "strategy_name": "Cross-asset spread mean reversion: IGV/JEPQ",
+            "hypothesis": "IGV is statistically likely to converge back toward its historical price relationship with JEPQ after diverging by an unusual amount.",
+            "rule_summary": "Trade the IGV/JEPQ price ratio: go long IGV when its z-score versus JEPQ falls to -1.5, exit back to cash once it recovers to -0.25.",
+            "executor_id": "quant_trader.cross_asset_spread_mean_reversion.v1",
+            "asset_eligibility_logic": "Requires point-in-time history for both IGV and JEPQ covering at least 16 trading days at every rebalance.",
+            "signal_logic": "Daily z-score of the IGV/JEPQ closing-price ratio over a trailing 16-day rolling window.",
+            "position_logic": "Single position: fully allocate to the long leg when in the trade, fully in cash otherwise. No shorting; max gross leverage 1.0x.",
+            "entry_logic": "Enter when the ratio z-score falls to or below -1.5.",
+            "exit_logic": "Exit when the ratio z-score rises back to or above -0.25.",
+            "rebalancing_logic": "Rebalances only when the entry/exit condition changes; otherwise holds the current position unchanged.",
+            "parameters": {
+              "ticker_a": "IGV",
+              "ticker_b": "JEPQ",
+              "lookback_days": 16,
+              "entry_zscore": 1.5,
+              "exit_zscore": 0.25
+            },
+            "specialty_evidence_ids": [
+              "quant_trader.pair_scan.IGV_JEPQ"
+            ],
+            "specialty_evidence_usage": {
+              "quant_trader.pair_scan.IGV_JEPQ": "Correlation and AR(1) mean-reversion half-life evidence used to select this pair and size its lookback window."
+            },
+            "required_data_fields": [
+              "close"
+            ],
+            "constraint_handling": [
+              "Long-only, single-pair, unlevered - stays within a research-stage mandate's default risk footprint."
+            ],
+            "implementation_notes": [
+              "IGV and JEPQ moved together closely during the training window (correlation 0.8903 over 278 shared trading days), and their price spread snapped back toward its average in about 7.89 trading days. That combination - a real relationship plus a measurable pull back to normal - is what makes this a testable mean-reversion anomaly. Trade the spread: buy IGV when it is cheap versus JEPQ by 1.5 standard deviations, exit as the gap closes back to 0.25 standard deviations."
+            ],
+            "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+            "trader_id": "quant_trader_agent",
+            "lineage": {
+              "workflow_id": "full-loop-demo-workflow",
+              "task_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+              "parent_task_id": "full-loop-demo-task.round-1.quant.trader",
+              "source_task_id": "full-loop-demo-task",
+              "attempt": 1
+            }
+          },
+          "plan": {
+            "requested_start_date": null,
+            "requested_end_date": "2026-06-29",
+            "frequency": "daily",
+            "benchmark": "IGV",
+            "transaction_cost_assumptions": {},
+            "requested_metrics": [
+              "total_return",
+              "annualized_return",
+              "max_drawdown",
+              "sharpe_ratio",
+              "transaction_count"
+            ],
+            "validation_requirements": [
+              "held_out_out_of_sample_test"
+            ],
+            "held_out_evaluation_required": true,
+            "validation_split": {
+              "test_start_date": "2023-06-14",
+              "test_end_date": "2026-06-29"
+            }
+          },
+          "data_references": [
+            "offline_fixture::prices",
+            "offline_fixture::etf_metadata"
+          ],
+          "mandate_constraints": {
+            "prohibited_assets": [],
+            "permitted_asset_universe": [
+              "EWA",
+              "EWJ",
+              "EWC",
+              "EWU",
+              "XLP",
+              "XLF",
+              "XLY",
+              "XLB",
+              "XLI",
+              "XLK",
+              "XLE",
+              "XLU",
+              "QQQ",
+              "EWY",
+              "IVV",
+              "IJH",
+              "IJR",
+              "SMH",
+              "EWT",
+              "EZU",
+              "IGV",
+              "ILF",
+              "TLT",
+              "LQD",
+              "SHY",
+              "IEF",
+              "TIP",
+              "VTV",
+              "VNQ",
+              "IAU",
+              "PEJ",
+              "PBJ",
+              "FXE",
+              "XBI",
+              "DBC",
+              "USO",
+              "SLV",
+              "IHI",
+              "GDX",
+              "DXJ",
+              "KRE",
+              "FXB",
+              "FXF",
+              "FXA",
+              "FXC",
+              "DBB",
+              "DBA",
+              "FXY",
+              "UUP",
+              "UDN",
+              "PFF",
+              "BND",
+              "HYG",
+              "UNG",
+              "REM",
+              "FIW",
+              "VEA",
+              "MOO",
+              "MUB",
+              "IGF",
+              "EMB",
+              "TUR",
+              "TAN",
+              "WOOD",
+              "ICLN",
+              "FAN",
+              "AFK",
+              "SPXU",
+              "VNM",
+              "PALL",
+              "PPLT",
+              "SQQQ",
+              "SOXS",
+              "COPX",
+              "SIL",
+              "LIT",
+              "AMLP",
+              "EWZS",
+              "REMX",
+              "VNQI",
+              "XTN",
+              "ARGT",
+              "MCHI",
+              "SPLV",
+              "SKYY",
+              "XAR",
+              "SCHD",
+              "CPER",
+              "PICK",
+              "INDA",
+              "SMIN",
+              "IEMG",
+              "MTUM",
+              "BNDX",
+              "XYLD",
+              "FHLC",
+              "ASHR",
+              "JETS",
+              "CIBR",
+              "KSA",
+              "FINX",
+              "BOTZ",
+              "COW",
+              "VXX",
+              "DRIV",
+              "AIQ",
+              "XLC",
+              "ESPO",
+              "UFO",
+              "RYLD",
+              "URNM",
+              "AWAY",
+              "JEPI",
+              "BETZ",
+              "MSOS",
+              "ARKX",
+              "SVOL",
+              "SEA",
+              "JEPQ",
+              "RCTR"
+            ]
+          },
+          "additional_fields": {}
+        },
+        "backtest_result": {
+          "result_id": "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result",
+          "execution_attempt_id": "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1",
+          "request_id": "full-loop-demo-task.round-1.quant.trader.backtest",
+          "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+          "status": "succeeded",
+          "computed_by": "deterministic_backtest_engine",
+          "engine_name": "fractional_ai_workforce_backtest_engine",
+          "engine_version": "0.7.0",
+          "metrics": {
+            "total_return": 0.3536828848289981,
+            "annualized_return": 0.012239592789212272,
+            "max_drawdown": -0.35764975138020205,
+            "annualized_volatility": 0.06492194364501305,
+            "sharpe_ratio": 0.21980947090461678,
+            "transaction_count": 58,
+            "transaction_costs": 0.0,
+            "turnover": 86.65650038246635
+          },
+          "out_of_sample_metrics": {
+            "total_return": -0.09221680097385421,
+            "annualized_return": -0.03153022748848522,
+            "max_drawdown": -0.35764975138020205,
+            "annualized_volatility": 0.15667802383244983,
+            "sharpe_ratio": -0.12570860567434097,
+            "transaction_count": 40,
+            "transaction_costs": 0.0,
+            "turnover": 63.98661106089147
+          },
+          "benchmark_metrics": {
+            "total_return": 8.225201650967287,
+            "annualized_return": 0.09336500933730485,
+            "max_drawdown": -0.6218404393809979,
+            "annualized_volatility": 0.2653162516002149,
+            "sharpe_ratio": 0.46910380276757263,
+            "transaction_count": 2,
+            "transaction_costs": 0.0,
+            "turnover": 10.225201650967287
+          },
+          "warnings": [
+            "A strategy signal could not execute because its delay extended beyond the available data."
+          ],
+          "constraint_violations": [],
+          "artifact_references": [],
+          "ledger_entry": {
+            "ledger_entry_id": "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result.ledger",
+            "recorded_at": "2026-08-19T06:24:45.766191Z",
+            "run_id": "full-loop-demo-run",
+            "workflow_run_id": "full-loop-demo-run",
+            "workflow_id": "full-loop-demo-workflow",
+            "round_number": 1,
+            "task_id": "full-loop-demo-task.round-1.quant.trader.backtest",
+            "attempt": 1,
+            "request_id": "full-loop-demo-task.round-1.quant.trader.backtest",
+            "result_id": "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result",
+            "trader_id": "quant_trader_agent",
+            "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+            "strategy_name": "Cross-asset spread mean reversion: IGV/JEPQ",
+            "executor_id": "quant_trader.cross_asset_spread_mean_reversion.v1",
+            "parameters": {
+              "ticker_a": "IGV",
+              "ticker_b": "JEPQ",
+              "lookback_days": 16,
+              "entry_zscore": 1.5,
+              "exit_zscore": 0.25
+            },
+            "canonical_universe_id": null,
+            "evaluation_policy_id": null,
+            "resolved_symbols": [
+              "IGV",
+              "JEPQ"
+            ],
+            "data_references": [
+              "offline_fixture"
+            ],
+            "requested_start_date": null,
+            "requested_end_date": "2026-06-29",
+            "resolved_start_time": "2001-07-17T00:00:00Z",
+            "resolved_end_time": "2026-06-29T00:00:00Z",
+            "benchmark": "IGV",
+            "status": "succeeded",
+            "metrics": {
+              "total_return": 0.3536828848289981,
+              "annualized_return": 0.012239592789212272,
+              "max_drawdown": -0.35764975138020205,
+              "annualized_volatility": 0.06492194364501305,
+              "sharpe_ratio": 0.21980947090461678,
+              "transaction_count": 58,
+              "transaction_costs": 0.0,
+              "turnover": 86.65650038246635
+            },
+            "out_of_sample_metrics": {
+              "total_return": -0.09221680097385421,
+              "annualized_return": -0.03153022748848522,
+              "max_drawdown": -0.35764975138020205,
+              "annualized_volatility": 0.15667802383244983,
+              "sharpe_ratio": -0.12570860567434097,
+              "transaction_count": 40,
+              "transaction_costs": 0.0,
+              "turnover": 63.98661106089147
+            },
+            "benchmark_metrics": {
+              "total_return": 8.225201650967287,
+              "annualized_return": 0.09336500933730485,
+              "max_drawdown": -0.6218404393809979,
+              "annualized_volatility": 0.2653162516002149,
+              "sharpe_ratio": 0.46910380276757263,
+              "transaction_count": 2,
+              "transaction_costs": 0.0,
+              "turnover": 10.225201650967287
+            },
+            "warnings": [
+              "A strategy signal could not execute because its delay extended beyond the available data."
+            ],
+            "constraint_violations": [],
+            "artifact_references": [],
+            "failure_reason": null,
+            "additional_fields": {}
+          },
+          "ledger_references": [],
+          "failure_reason": null,
+          "additional_fields": {
+            "executor_id": "quant_trader.cross_asset_spread_mean_reversion.v1",
+            "bar_count": 7315,
+            "data_references": [
+              "offline_fixture"
+            ],
+            "applied_assumptions": {
+              "initial_capital": 100000.0,
+              "commission_bps": 0.0,
+              "slippage_bps": 0.0,
+              "fill_price_field": "close",
+              "signal_delay_bars": 1,
+              "liquidate_at_end": true,
+              "allow_short": false,
+              "max_gross_leverage": 1.0,
+              "annualization_factor": 252
+            }
+          }
+        },
+        "interpretation": {
+          "summary": "Cross-asset spread mean reversion on IGV/JEPQ. Training-window total return: 0.3536828848289981. Held-out test-window total return: -0.09221680097385421.",
+          "metric_interpretations": [
+            {
+              "metric_name": "total_return",
+              "interpretation": "Simple return over the equity curve. Training-window value: 0.3536828848289981.",
+              "result_section": "train_period"
+            },
+            {
+              "metric_name": "annualized_return",
+              "interpretation": "Annualized geometric return for the plan frequency. Training-window value: 0.012239592789212272.",
+              "result_section": "train_period"
+            },
+            {
+              "metric_name": "max_drawdown",
+              "interpretation": "Worst peak-to-trough equity decline. Training-window value: -0.35764975138020205.",
+              "result_section": "train_period"
+            },
+            {
+              "metric_name": "annualized_volatility",
+              "interpretation": "Sample volatility of periodic returns, annualized. Training-window value: 0.06492194364501305.",
+              "result_section": "train_period"
+            },
+            {
+              "metric_name": "sharpe_ratio",
+              "interpretation": "Annualized Sharpe of periodic returns (rf=0). Training-window value: 0.21980947090461678.",
+              "result_section": "train_period"
+            },
+            {
+              "metric_name": "transaction_count",
+              "interpretation": "Number of simulated trades. Training-window value: 58.",
+              "result_section": "train_period"
+            },
+            {
+              "metric_name": "transaction_costs",
+              "interpretation": "Total modeled commissions and slippage cost. Training-window value: 0.0.",
+              "result_section": "train_period"
+            },
+            {
+              "metric_name": "turnover",
+              "interpretation": "Gross reference notional divided by initial capital. Training-window value: 86.65650038246635.",
+              "result_section": "train_period"
+            },
+            {
+              "metric_name": "total_return",
+              "interpretation": "Simple return over the equity curve. Held-out test-window value: -0.09221680097385421.",
+              "result_section": "test_period"
+            },
+            {
+              "metric_name": "annualized_return",
+              "interpretation": "Annualized geometric return for the plan frequency. Held-out test-window value: -0.03153022748848522.",
+              "result_section": "test_period"
+            },
+            {
+              "metric_name": "max_drawdown",
+              "interpretation": "Worst peak-to-trough equity decline. Held-out test-window value: -0.35764975138020205.",
+              "result_section": "test_period"
+            },
+            {
+              "metric_name": "annualized_volatility",
+              "interpretation": "Sample volatility of periodic returns, annualized. Held-out test-window value: 0.15667802383244983.",
+              "result_section": "test_period"
+            },
+            {
+              "metric_name": "sharpe_ratio",
+              "interpretation": "Annualized Sharpe of periodic returns (rf=0). Held-out test-window value: -0.12570860567434097.",
+              "result_section": "test_period"
+            },
+            {
+              "metric_name": "transaction_count",
+              "interpretation": "Number of simulated trades. Held-out test-window value: 40.",
+              "result_section": "test_period"
+            },
+            {
+              "metric_name": "transaction_costs",
+              "interpretation": "Total modeled commissions and slippage cost. Held-out test-window value: 0.0.",
+              "result_section": "test_period"
+            },
+            {
+              "metric_name": "turnover",
+              "interpretation": "Gross reference notional divided by initial capital. Held-out test-window value: 63.98661106089147.",
+              "result_section": "test_period"
+            }
+          ],
+          "out_of_sample_assessment": "Held-out metrics are reported separately from training metrics above and were computed on a window the candidate's parameters were never tuned against.",
+          "strengths": [
+            "Statistically grounded pair selection: IGV and JEPQ moved together closely during the training window (correlation 0.8903 over 278 shared trading days), and their price spread snapped back toward its average in about 7.89 trading days. That combination - a real relationship plus a measurable pull back to normal - is what makes this a testable mean-reversion anomaly. Trade the spread: buy IGV when it is cheap versus JEPQ by 1.5 standard deviations, exit as the gap closes back to 0.25 standard deviations."
+          ],
+          "weaknesses": [
+            "A strategy signal could not execute because its delay extended beyond the available data."
+          ],
+          "overfitting_risks": [
+            "This candidate was selected from a scan of 0.7049 score-ranked pairs across the permitted universe; a single strong-looking pair among many tested is exactly the kind of result that needs Risk's scrutiny for selection bias / cherry-picking, independent of how the backtest itself performed."
+          ],
+          "limitations": [
+            "No transaction-cost stress testing beyond the engine's configured commission/slippage assumptions.",
+            "Single benchmark-free pair strategy; no comparison against alternative pairs' out-of-sample performance yet."
+          ],
+          "mandate_alignment": [
+            "Long-only, single-pair exposure; no leverage or short selling used."
+          ],
+          "open_questions": [
+            "Should Quant Trader propose more than one candidate per round so Risk can compare survivors instead of reviewing a single pair?"
+          ],
+          "confidence": {
+            "level": "medium",
+            "rationale": "Backtest status was succeeded; metrics were computed by the deterministic engine, not estimated.",
+            "uncertainty_drivers": [
+              "Interpretation is template-generated, not model-authored; treat language here as a structured summary of the metrics, not analysis."
+            ]
+          }
+        },
+        "constraint_assessment": {
+          "status": "declared_aligned",
+          "mappings": [
+            "Long-only single-pair exposure (IGV/JEPQ) stays within a one-position-at-a-time risk footprint suitable for a research-stage mandate."
+          ],
+          "violations": [],
+          "requires_risk_validation": true
+        },
+        "failures": [],
+        "eligible_for_risk_review": true,
+        "additional_fields": {}
+      }
     },
     "risk": {
-      "agent_id": "risk_agent", "name": "Risk / Skeptic", "role": "Overfitting and cherry-picking review", "staffing_status": "Active", "state": "Completed",
-      "task": "pm-mandate-004.round-4.risk", "input": {"candidate_count": 2}, "output": {"approved_candidate_ids": ["technical-004"]},
-      "start_time": "2026-08-14T10:07:11+00:00", "end_time": "2026-08-14T10:09:14+00:00", "next_step": "prepare_reporting", "error_message": null,
-      "metrics": {"task_completion_time": "0:02:03", "success_rate": "N/A", "api_cost": "N/A", "retry_count": "N/A", "failed_count": "N/A"},
-      "package": {"approved_candidate_ids": ["technical-004"], "decisions": [{"candidate_id": "technical-004", "verdict": "approved"}, {"candidate_id": "quant-004", "verdict": "vetoed"}]}
+      "agent_id": "risk_agent",
+      "name": "Risk / Skeptic",
+      "role": "Overfitting and cherry-picking review",
+      "staffing_status": "Active",
+      "state": "Completed",
+      "task": "full-loop-demo-task.round-1.risk",
+      "input": {
+        "request_id": "full-loop-demo-task.round-1.risk"
+      },
+      "output": {
+        "response_id": "full-loop-demo-task.round-1.risk.response",
+        "approved_candidate_ids": [
+          "full-loop-demo-task.round-1.fundamental.trader.candidate",
+          "full-loop-demo-task.round-1.quant.trader.candidate"
+        ],
+        "blocked_progression": false
+      },
+      "start_time": "2026-08-19T06:24:45.790830Z",
+      "end_time": "2026-08-19T06:24:45.791648Z",
+      "next_step": "prepare_reporting",
+      "error_message": null,
+      "metrics": {
+        "task_completion_time": "0:00:00.000818",
+        "success_rate": "N/A",
+        "api_cost": "N/A",
+        "retry_count": "N/A",
+        "failed_count": "N/A"
+      },
+      "package": {
+        "response_id": "full-loop-demo-task.round-1.risk.response",
+        "request_id": "full-loop-demo-task.round-1.risk",
+        "decisions": [
+          {
+            "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+            "verdict": "approve",
+            "check_results": [
+              {
+                "check_id": "CP-1",
+                "verdict": "flag",
+                "scope": "candidate",
+                "summary": "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+                "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+                "evidence_ids": [],
+                "deterministic": true,
+                "requires_human_review": true
+              },
+              {
+                "check_id": "CP-2",
+                "verdict": "flag",
+                "scope": "candidate",
+                "summary": "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+                "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+                "evidence_ids": [],
+                "deterministic": true,
+                "requires_human_review": true
+              },
+              {
+                "check_id": "CP-3",
+                "verdict": "pass",
+                "scope": "candidate",
+                "summary": "Backtest succeeded over the full requested window with a code-owned validation split and out-of-sample metrics.",
+                "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+                "evidence_ids": [
+                  "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result"
+                ],
+                "deterministic": true,
+                "requires_human_review": false
+              },
+              {
+                "check_id": "CP-4",
+                "verdict": "flag",
+                "scope": "candidate",
+                "summary": "Unverifiable: round audit ledger unavailable; cross-run universe comparison needs human review.",
+                "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+                "evidence_ids": [],
+                "deterministic": true,
+                "requires_human_review": true
+              },
+              {
+                "check_id": "CP-5",
+                "verdict": "pass",
+                "scope": "candidate",
+                "summary": "All canonical metrics are present and non-null.",
+                "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+                "evidence_ids": [
+                  "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result"
+                ],
+                "deterministic": true,
+                "requires_human_review": false
+              },
+              {
+                "check_id": "CP-6",
+                "verdict": "pass",
+                "scope": "candidate",
+                "summary": "Benchmark 'DRIV' was computed in the same engine run under identical assumptions.",
+                "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+                "evidence_ids": [
+                  "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result"
+                ],
+                "deterministic": true,
+                "requires_human_review": false
+              },
+              {
+                "check_id": "CP-13",
+                "verdict": "pass",
+                "scope": "candidate",
+                "summary": "All resolved data and the validation split respect the as-of boundary.",
+                "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+                "evidence_ids": [
+                  "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result.ledger"
+                ],
+                "deterministic": true,
+                "requires_human_review": false
+              },
+              {
+                "check_id": "CP-9",
+                "verdict": "pass",
+                "scope": "candidate",
+                "summary": "All cited evidence resolves to this candidate's own runs.",
+                "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+                "evidence_ids": [
+                  "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result"
+                ],
+                "deterministic": true,
+                "requires_human_review": false
+              },
+              {
+                "check_id": "CP-11",
+                "verdict": "pass",
+                "scope": "candidate",
+                "summary": "Round 1 is within the 3-round validation-touch budget.",
+                "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+                "evidence_ids": [
+                  "full-loop-demo-task.round-1.risk"
+                ],
+                "deterministic": true,
+                "requires_human_review": false
+              },
+              {
+                "check_id": "CP-12",
+                "verdict": "pass",
+                "scope": "candidate",
+                "summary": "First round; no prior vetoes exist to resurrect.",
+                "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+                "evidence_ids": [
+                  "full-loop-demo-task.round-1.risk"
+                ],
+                "deterministic": true,
+                "requires_human_review": false
+              }
+            ],
+            "critiques": [],
+            "reporting_flags": [
+              "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+              "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+              "Unverifiable: round audit ledger unavailable; cross-run universe comparison needs human review."
+            ],
+            "veto_reason_codes": [],
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result",
+              "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result.ledger",
+              "full-loop-demo-task.round-1.risk"
+            ]
+          },
+          {
+            "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+            "verdict": "approve",
+            "check_results": [
+              {
+                "check_id": "CP-1",
+                "verdict": "flag",
+                "scope": "candidate",
+                "summary": "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+                "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+                "evidence_ids": [],
+                "deterministic": true,
+                "requires_human_review": true
+              },
+              {
+                "check_id": "CP-2",
+                "verdict": "flag",
+                "scope": "candidate",
+                "summary": "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+                "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+                "evidence_ids": [],
+                "deterministic": true,
+                "requires_human_review": true
+              },
+              {
+                "check_id": "CP-3",
+                "verdict": "pass",
+                "scope": "candidate",
+                "summary": "Backtest succeeded over the full requested window with a code-owned validation split and out-of-sample metrics.",
+                "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+                "evidence_ids": [
+                  "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result"
+                ],
+                "deterministic": true,
+                "requires_human_review": false
+              },
+              {
+                "check_id": "CP-4",
+                "verdict": "flag",
+                "scope": "candidate",
+                "summary": "Unverifiable: round audit ledger unavailable; cross-run universe comparison needs human review.",
+                "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+                "evidence_ids": [],
+                "deterministic": true,
+                "requires_human_review": true
+              },
+              {
+                "check_id": "CP-5",
+                "verdict": "pass",
+                "scope": "candidate",
+                "summary": "All canonical metrics are present and non-null.",
+                "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+                "evidence_ids": [
+                  "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result"
+                ],
+                "deterministic": true,
+                "requires_human_review": false
+              },
+              {
+                "check_id": "CP-6",
+                "verdict": "pass",
+                "scope": "candidate",
+                "summary": "Benchmark 'IGV' was computed in the same engine run under identical assumptions.",
+                "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+                "evidence_ids": [
+                  "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result"
+                ],
+                "deterministic": true,
+                "requires_human_review": false
+              },
+              {
+                "check_id": "CP-13",
+                "verdict": "pass",
+                "scope": "candidate",
+                "summary": "All resolved data and the validation split respect the as-of boundary.",
+                "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+                "evidence_ids": [
+                  "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result.ledger"
+                ],
+                "deterministic": true,
+                "requires_human_review": false
+              },
+              {
+                "check_id": "CP-9",
+                "verdict": "pass",
+                "scope": "candidate",
+                "summary": "All cited evidence resolves to this candidate's own runs.",
+                "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+                "evidence_ids": [
+                  "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result"
+                ],
+                "deterministic": true,
+                "requires_human_review": false
+              },
+              {
+                "check_id": "CP-11",
+                "verdict": "pass",
+                "scope": "candidate",
+                "summary": "Round 1 is within the 3-round validation-touch budget.",
+                "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+                "evidence_ids": [
+                  "full-loop-demo-task.round-1.risk"
+                ],
+                "deterministic": true,
+                "requires_human_review": false
+              },
+              {
+                "check_id": "CP-12",
+                "verdict": "pass",
+                "scope": "candidate",
+                "summary": "First round; no prior vetoes exist to resurrect.",
+                "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+                "evidence_ids": [
+                  "full-loop-demo-task.round-1.risk"
+                ],
+                "deterministic": true,
+                "requires_human_review": false
+              }
+            ],
+            "critiques": [],
+            "reporting_flags": [
+              "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+              "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+              "Unverifiable: round audit ledger unavailable; cross-run universe comparison needs human review."
+            ],
+            "veto_reason_codes": [],
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result",
+              "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result.ledger",
+              "full-loop-demo-task.round-1.risk"
+            ]
+          }
+        ],
+        "round_check_results": [
+          {
+            "check_id": "CP-7",
+            "verdict": "flag",
+            "scope": "round",
+            "summary": "Multiple-comparison disclosure: 2 candidate(s) from parallel lenses (1 package(s) excluded), at least 2 declared hypothesis test(s) against the same validation window this round. Reporting must present every candidate with its verdict, not only the winner.",
+            "candidate_id": null,
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.risk"
+            ],
+            "deterministic": true,
+            "requires_human_review": false
+          },
+          {
+            "check_id": "CP-8",
+            "verdict": "pass",
+            "scope": "round",
+            "summary": "No candidate pair shares an executor with identical parameters; lenses appear independent at rule level.",
+            "candidate_id": null,
+            "evidence_ids": [],
+            "deterministic": true,
+            "requires_human_review": false
+          },
+          {
+            "check_id": "CP-10",
+            "verdict": "pass",
+            "scope": "round",
+            "summary": "First round; the research log starts here.",
+            "candidate_id": null,
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.risk"
+            ],
+            "deterministic": true,
+            "requires_human_review": false
+          }
+        ],
+        "collective_critiques": [
+          "Excluded from review this round: 1 package(s) that settled without a risk-eligible candidate."
+        ],
+        "reporting_required_flags": [],
+        "blocked_progression": false,
+        "reviewed_at": "2026-08-19T06:24:45.791436Z",
+        "reviewer_card_version": "0.1.0",
+        "additional_fields": {}
+      }
     },
     "reporting": {
-      "agent_id": "reporting_agent", "name": "Reporting", "role": "PM-facing research memo", "staffing_status": "Active", "state": "Completed",
-      "task": "pm-mandate-004.round-4.reporting", "input": {"approved_candidate_count": 1}, "output": {"output_id": "report-004"},
-      "start_time": "2026-08-14T10:09:14+00:00", "end_time": "2026-08-14T10:10:32+00:00", "next_step": "pm_decision", "error_message": null,
-      "metrics": {"task_completion_time": "0:01:18", "success_rate": "N/A", "api_cost": "N/A", "retry_count": "N/A", "failed_count": "N/A"},
-      "package": {"output_id": "report-004", "strategy_memo_reference": "Technical strategy approved after Risk review.", "comparison": {"candidates": ["technical-004", "quant-004"]}}
+      "agent_id": "reporting_agent",
+      "name": "Reporting",
+      "role": "PM-facing research memo",
+      "staffing_status": "Active",
+      "state": "Completed",
+      "task": "full-loop-demo-task.round-1.risk.reporting",
+      "input": {
+        "request_id": "full-loop-demo-task.round-1.risk.reporting"
+      },
+      "output": {
+        "output_id": "full-loop-demo-task.round-1.risk.reporting"
+      },
+      "start_time": "2026-08-19T06:24:45.798879Z",
+      "end_time": "2026-08-19T06:24:45.799248Z",
+      "next_step": "prepare_pm_review",
+      "error_message": null,
+      "metrics": {
+        "task_completion_time": "0:00:00.000369",
+        "success_rate": "N/A",
+        "api_cost": "N/A",
+        "retry_count": "N/A",
+        "failed_count": "N/A"
+      },
+      "package": {
+        "output_id": "full-loop-demo-task.round-1.risk.reporting",
+        "request_id": "full-loop-demo-task.round-1.risk.reporting",
+        "surviving_candidate_ids": [
+          "full-loop-demo-task.round-1.fundamental.trader.candidate",
+          "full-loop-demo-task.round-1.quant.trader.candidate"
+        ],
+        "strategy_memo_reference": null,
+        "comparison": {
+          "candidates": [
+            {
+              "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+              "trader_id": "fundamental_trader_agent",
+              "hypothesis": "DRIV is statistically likely to converge back toward the return of its \"Miscellaneous Sector\" category's major-issuer peers after diverging by an unusual amount.",
+              "metrics": {
+                "total_return": -0.12633071746730817,
+                "annualized_return": -0.007404954167668065,
+                "max_drawdown": -0.34870074841779763,
+                "annualized_volatility": 0.05519820512328771,
+                "sharpe_ratio": -0.10682443319206107,
+                "transaction_count": 236,
+                "transaction_costs": 0.0,
+                "turnover": 205.15528350193952
+              },
+              "out_of_sample_metrics": {
+                "total_return": -0.05505774585261114,
+                "annualized_return": -0.01857837896049508,
+                "max_drawdown": -0.17217130874029418,
+                "annualized_volatility": 0.06847799296026881,
+                "sharpe_ratio": -0.23981797019551734,
+                "transaction_count": 84,
+                "transaction_costs": 0.0,
+                "turnover": 70.58692591109966
+              },
+              "interpretation": "Category-benchmark deviation on DRIV (\"Miscellaneous Sector\" category) versus its major-tier peer benchmark (FAN, ICLN, TAN). Training-window total return: -0.12633071746730817. Held-out test-window total return: -0.05505774585261114.",
+              "strengths": [
+                "Category-grounded selection: DRIV (Global X Funds, boutique tier) has diverged +1.56 std from its \"Miscellaneous Sector\" category benchmark (FAN, ICLN, TAN, major tier) over the trailing 20 trading days, with 0.73 return correlation to that benchmark historically."
+              ],
+              "weaknesses": [],
+              "risk_verdict": "approve",
+              "risk_critiques": [],
+              "reporting_flags": [
+                "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+                "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+                "Unverifiable: round audit ledger unavailable; cross-run universe comparison needs human review."
+              ]
+            },
+            {
+              "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+              "trader_id": "quant_trader_agent",
+              "hypothesis": "IGV is statistically likely to converge back toward its historical price relationship with JEPQ after diverging by an unusual amount.",
+              "metrics": {
+                "total_return": 0.3536828848289981,
+                "annualized_return": 0.012239592789212272,
+                "max_drawdown": -0.35764975138020205,
+                "annualized_volatility": 0.06492194364501305,
+                "sharpe_ratio": 0.21980947090461678,
+                "transaction_count": 58,
+                "transaction_costs": 0.0,
+                "turnover": 86.65650038246635
+              },
+              "out_of_sample_metrics": {
+                "total_return": -0.09221680097385421,
+                "annualized_return": -0.03153022748848522,
+                "max_drawdown": -0.35764975138020205,
+                "annualized_volatility": 0.15667802383244983,
+                "sharpe_ratio": -0.12570860567434097,
+                "transaction_count": 40,
+                "transaction_costs": 0.0,
+                "turnover": 63.98661106089147
+              },
+              "interpretation": "Cross-asset spread mean reversion on IGV/JEPQ. Training-window total return: 0.3536828848289981. Held-out test-window total return: -0.09221680097385421.",
+              "strengths": [
+                "Statistically grounded pair selection: IGV and JEPQ moved together closely during the training window (correlation 0.8903 over 278 shared trading days), and their price spread snapped back toward its average in about 7.89 trading days. That combination - a real relationship plus a measurable pull back to normal - is what makes this a testable mean-reversion anomaly. Trade the spread: buy IGV when it is cheap versus JEPQ by 1.5 standard deviations, exit as the gap closes back to 0.25 standard deviations."
+              ],
+              "weaknesses": [
+                "A strategy signal could not execute because its delay extended beyond the available data."
+              ],
+              "risk_verdict": "approve",
+              "risk_critiques": [],
+              "reporting_flags": [
+                "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+                "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+                "Unverifiable: round audit ledger unavailable; cross-run universe comparison needs human review."
+              ]
+            }
+          ],
+          "collective_critiques": [
+            "Excluded from review this round: 1 package(s) that settled without a risk-eligible candidate."
+          ],
+          "reporting_required_flags": [
+            "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+            "Unverifiable: round audit ledger unavailable; cross-run universe comparison needs human review.",
+            "Multiple-comparison disclosure: 2 candidate(s) from parallel lenses (1 package(s) excluded), at least 2 declared hypothesis test(s) against the same validation window this round. Reporting must present every candidate with its verdict, not only the winner."
+          ]
+        },
+        "combination_logic_implemented": false
+      }
     }
   },
-  "summary_metrics": {"research_completion_time": "N/A", "total_api_cost": "N/A", "active_agents": 4},
-  "risk_review": {"approved_candidate_ids": ["technical-004"], "decisions": [{"candidate_id": "technical-004", "verdict": "approved"}, {"candidate_id": "quant-004", "verdict": "vetoed"}]},
+  "summary_metrics": {
+    "research_completion_time": "N/A",
+    "total_api_cost": "N/A",
+    "active_agents": 5
+  },
+  "risk_review": {
+    "response_id": "full-loop-demo-task.round-1.risk.response",
+    "request_id": "full-loop-demo-task.round-1.risk",
+    "decisions": [
+      {
+        "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+        "verdict": "approve",
+        "check_results": [
+          {
+            "check_id": "CP-1",
+            "verdict": "flag",
+            "scope": "candidate",
+            "summary": "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+            "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+            "evidence_ids": [],
+            "deterministic": true,
+            "requires_human_review": true
+          },
+          {
+            "check_id": "CP-2",
+            "verdict": "flag",
+            "scope": "candidate",
+            "summary": "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+            "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+            "evidence_ids": [],
+            "deterministic": true,
+            "requires_human_review": true
+          },
+          {
+            "check_id": "CP-3",
+            "verdict": "pass",
+            "scope": "candidate",
+            "summary": "Backtest succeeded over the full requested window with a code-owned validation split and out-of-sample metrics.",
+            "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result"
+            ],
+            "deterministic": true,
+            "requires_human_review": false
+          },
+          {
+            "check_id": "CP-4",
+            "verdict": "flag",
+            "scope": "candidate",
+            "summary": "Unverifiable: round audit ledger unavailable; cross-run universe comparison needs human review.",
+            "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+            "evidence_ids": [],
+            "deterministic": true,
+            "requires_human_review": true
+          },
+          {
+            "check_id": "CP-5",
+            "verdict": "pass",
+            "scope": "candidate",
+            "summary": "All canonical metrics are present and non-null.",
+            "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result"
+            ],
+            "deterministic": true,
+            "requires_human_review": false
+          },
+          {
+            "check_id": "CP-6",
+            "verdict": "pass",
+            "scope": "candidate",
+            "summary": "Benchmark 'DRIV' was computed in the same engine run under identical assumptions.",
+            "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result"
+            ],
+            "deterministic": true,
+            "requires_human_review": false
+          },
+          {
+            "check_id": "CP-13",
+            "verdict": "pass",
+            "scope": "candidate",
+            "summary": "All resolved data and the validation split respect the as-of boundary.",
+            "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result.ledger"
+            ],
+            "deterministic": true,
+            "requires_human_review": false
+          },
+          {
+            "check_id": "CP-9",
+            "verdict": "pass",
+            "scope": "candidate",
+            "summary": "All cited evidence resolves to this candidate's own runs.",
+            "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result"
+            ],
+            "deterministic": true,
+            "requires_human_review": false
+          },
+          {
+            "check_id": "CP-11",
+            "verdict": "pass",
+            "scope": "candidate",
+            "summary": "Round 1 is within the 3-round validation-touch budget.",
+            "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.risk"
+            ],
+            "deterministic": true,
+            "requires_human_review": false
+          },
+          {
+            "check_id": "CP-12",
+            "verdict": "pass",
+            "scope": "candidate",
+            "summary": "First round; no prior vetoes exist to resurrect.",
+            "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.risk"
+            ],
+            "deterministic": true,
+            "requires_human_review": false
+          }
+        ],
+        "critiques": [],
+        "reporting_flags": [
+          "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+          "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+          "Unverifiable: round audit ledger unavailable; cross-run universe comparison needs human review."
+        ],
+        "veto_reason_codes": [],
+        "evidence_ids": [
+          "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result",
+          "full-loop-demo-task.round-1.fundamental.trader.backtest.attempt-1.result.ledger",
+          "full-loop-demo-task.round-1.risk"
+        ]
+      },
+      {
+        "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+        "verdict": "approve",
+        "check_results": [
+          {
+            "check_id": "CP-1",
+            "verdict": "flag",
+            "scope": "candidate",
+            "summary": "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+            "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+            "evidence_ids": [],
+            "deterministic": true,
+            "requires_human_review": true
+          },
+          {
+            "check_id": "CP-2",
+            "verdict": "flag",
+            "scope": "candidate",
+            "summary": "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+            "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+            "evidence_ids": [],
+            "deterministic": true,
+            "requires_human_review": true
+          },
+          {
+            "check_id": "CP-3",
+            "verdict": "pass",
+            "scope": "candidate",
+            "summary": "Backtest succeeded over the full requested window with a code-owned validation split and out-of-sample metrics.",
+            "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result"
+            ],
+            "deterministic": true,
+            "requires_human_review": false
+          },
+          {
+            "check_id": "CP-4",
+            "verdict": "flag",
+            "scope": "candidate",
+            "summary": "Unverifiable: round audit ledger unavailable; cross-run universe comparison needs human review.",
+            "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+            "evidence_ids": [],
+            "deterministic": true,
+            "requires_human_review": true
+          },
+          {
+            "check_id": "CP-5",
+            "verdict": "pass",
+            "scope": "candidate",
+            "summary": "All canonical metrics are present and non-null.",
+            "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result"
+            ],
+            "deterministic": true,
+            "requires_human_review": false
+          },
+          {
+            "check_id": "CP-6",
+            "verdict": "pass",
+            "scope": "candidate",
+            "summary": "Benchmark 'IGV' was computed in the same engine run under identical assumptions.",
+            "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result"
+            ],
+            "deterministic": true,
+            "requires_human_review": false
+          },
+          {
+            "check_id": "CP-13",
+            "verdict": "pass",
+            "scope": "candidate",
+            "summary": "All resolved data and the validation split respect the as-of boundary.",
+            "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result.ledger"
+            ],
+            "deterministic": true,
+            "requires_human_review": false
+          },
+          {
+            "check_id": "CP-9",
+            "verdict": "pass",
+            "scope": "candidate",
+            "summary": "All cited evidence resolves to this candidate's own runs.",
+            "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result"
+            ],
+            "deterministic": true,
+            "requires_human_review": false
+          },
+          {
+            "check_id": "CP-11",
+            "verdict": "pass",
+            "scope": "candidate",
+            "summary": "Round 1 is within the 3-round validation-touch budget.",
+            "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.risk"
+            ],
+            "deterministic": true,
+            "requires_human_review": false
+          },
+          {
+            "check_id": "CP-12",
+            "verdict": "pass",
+            "scope": "candidate",
+            "summary": "First round; no prior vetoes exist to resurrect.",
+            "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+            "evidence_ids": [
+              "full-loop-demo-task.round-1.risk"
+            ],
+            "deterministic": true,
+            "requires_human_review": false
+          }
+        ],
+        "critiques": [],
+        "reporting_flags": [
+          "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+          "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+          "Unverifiable: round audit ledger unavailable; cross-run universe comparison needs human review."
+        ],
+        "veto_reason_codes": [],
+        "evidence_ids": [
+          "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result",
+          "full-loop-demo-task.round-1.quant.trader.backtest.attempt-1.result.ledger",
+          "full-loop-demo-task.round-1.risk"
+        ]
+      }
+    ],
+    "round_check_results": [
+      {
+        "check_id": "CP-7",
+        "verdict": "flag",
+        "scope": "round",
+        "summary": "Multiple-comparison disclosure: 2 candidate(s) from parallel lenses (1 package(s) excluded), at least 2 declared hypothesis test(s) against the same validation window this round. Reporting must present every candidate with its verdict, not only the winner.",
+        "candidate_id": null,
+        "evidence_ids": [
+          "full-loop-demo-task.round-1.risk"
+        ],
+        "deterministic": true,
+        "requires_human_review": false
+      },
+      {
+        "check_id": "CP-8",
+        "verdict": "pass",
+        "scope": "round",
+        "summary": "No candidate pair shares an executor with identical parameters; lenses appear independent at rule level.",
+        "candidate_id": null,
+        "evidence_ids": [],
+        "deterministic": true,
+        "requires_human_review": false
+      },
+      {
+        "check_id": "CP-10",
+        "verdict": "pass",
+        "scope": "round",
+        "summary": "First round; the research log starts here.",
+        "candidate_id": null,
+        "evidence_ids": [
+          "full-loop-demo-task.round-1.risk"
+        ],
+        "deterministic": true,
+        "requires_human_review": false
+      }
+    ],
+    "collective_critiques": [
+      "Excluded from review this round: 1 package(s) that settled without a risk-eligible candidate."
+    ],
+    "reporting_required_flags": [],
+    "blocked_progression": false,
+    "reviewed_at": "2026-08-19T06:24:45.791436Z",
+    "reviewer_card_version": "0.1.0",
+    "additional_fields": {}
+  },
   "risk_failure": {},
-  "reporting": {"output_id": "report-004", "strategy_memo_reference": "Technical strategy approved after Risk review.", "comparison": {"candidates": ["technical-004", "quant-004"]}},
-  "reporting_failure": {}, "pm_decision": {},
-  "memory": {"record_id": "memory-004", "context": null}, "operational_events": []
+  "reporting": {
+    "output_id": "full-loop-demo-task.round-1.risk.reporting",
+    "request_id": "full-loop-demo-task.round-1.risk.reporting",
+    "surviving_candidate_ids": [
+      "full-loop-demo-task.round-1.fundamental.trader.candidate",
+      "full-loop-demo-task.round-1.quant.trader.candidate"
+    ],
+    "strategy_memo_reference": null,
+    "comparison": {
+      "candidates": [
+        {
+          "candidate_id": "full-loop-demo-task.round-1.fundamental.trader.candidate",
+          "trader_id": "fundamental_trader_agent",
+          "hypothesis": "DRIV is statistically likely to converge back toward the return of its \"Miscellaneous Sector\" category's major-issuer peers after diverging by an unusual amount.",
+          "metrics": {
+            "total_return": -0.12633071746730817,
+            "annualized_return": -0.007404954167668065,
+            "max_drawdown": -0.34870074841779763,
+            "annualized_volatility": 0.05519820512328771,
+            "sharpe_ratio": -0.10682443319206107,
+            "transaction_count": 236,
+            "transaction_costs": 0.0,
+            "turnover": 205.15528350193952
+          },
+          "out_of_sample_metrics": {
+            "total_return": -0.05505774585261114,
+            "annualized_return": -0.01857837896049508,
+            "max_drawdown": -0.17217130874029418,
+            "annualized_volatility": 0.06847799296026881,
+            "sharpe_ratio": -0.23981797019551734,
+            "transaction_count": 84,
+            "transaction_costs": 0.0,
+            "turnover": 70.58692591109966
+          },
+          "interpretation": "Category-benchmark deviation on DRIV (\"Miscellaneous Sector\" category) versus its major-tier peer benchmark (FAN, ICLN, TAN). Training-window total return: -0.12633071746730817. Held-out test-window total return: -0.05505774585261114.",
+          "strengths": [
+            "Category-grounded selection: DRIV (Global X Funds, boutique tier) has diverged +1.56 std from its \"Miscellaneous Sector\" category benchmark (FAN, ICLN, TAN, major tier) over the trailing 20 trading days, with 0.73 return correlation to that benchmark historically."
+          ],
+          "weaknesses": [],
+          "risk_verdict": "approve",
+          "risk_critiques": [],
+          "reporting_flags": [
+            "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+            "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+            "Unverifiable: round audit ledger unavailable; cross-run universe comparison needs human review."
+          ]
+        },
+        {
+          "candidate_id": "full-loop-demo-task.round-1.quant.trader.candidate",
+          "trader_id": "quant_trader_agent",
+          "hypothesis": "IGV is statistically likely to converge back toward its historical price relationship with JEPQ after diverging by an unusual amount.",
+          "metrics": {
+            "total_return": 0.3536828848289981,
+            "annualized_return": 0.012239592789212272,
+            "max_drawdown": -0.35764975138020205,
+            "annualized_volatility": 0.06492194364501305,
+            "sharpe_ratio": 0.21980947090461678,
+            "transaction_count": 58,
+            "transaction_costs": 0.0,
+            "turnover": 86.65650038246635
+          },
+          "out_of_sample_metrics": {
+            "total_return": -0.09221680097385421,
+            "annualized_return": -0.03153022748848522,
+            "max_drawdown": -0.35764975138020205,
+            "annualized_volatility": 0.15667802383244983,
+            "sharpe_ratio": -0.12570860567434097,
+            "transaction_count": 40,
+            "transaction_costs": 0.0,
+            "turnover": 63.98661106089147
+          },
+          "interpretation": "Cross-asset spread mean reversion on IGV/JEPQ. Training-window total return: 0.3536828848289981. Held-out test-window total return: -0.09221680097385421.",
+          "strengths": [
+            "Statistically grounded pair selection: IGV and JEPQ moved together closely during the training window (correlation 0.8903 over 278 shared trading days), and their price spread snapped back toward its average in about 7.89 trading days. That combination - a real relationship plus a measurable pull back to normal - is what makes this a testable mean-reversion anomaly. Trade the spread: buy IGV when it is cheap versus JEPQ by 1.5 standard deviations, exit as the gap closes back to 0.25 standard deviations."
+          ],
+          "weaknesses": [
+            "A strategy signal could not execute because its delay extended beyond the available data."
+          ],
+          "risk_verdict": "approve",
+          "risk_critiques": [],
+          "reporting_flags": [
+            "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+            "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+            "Unverifiable: round audit ledger unavailable; cross-run universe comparison needs human review."
+          ]
+        }
+      ],
+      "collective_critiques": [
+        "Excluded from review this round: 1 package(s) that settled without a risk-eligible candidate."
+      ],
+      "reporting_required_flags": [
+        "Unverifiable: round audit ledger is not resolvable in this environment; trial accounting needs human review.",
+        "Unverifiable: round audit ledger unavailable; cross-run universe comparison needs human review.",
+        "Multiple-comparison disclosure: 2 candidate(s) from parallel lenses (1 package(s) excluded), at least 2 declared hypothesis test(s) against the same validation window this round. Reporting must present every candidate with its verdict, not only the winner."
+      ]
+    },
+    "combination_logic_implemented": false
+  },
+  "reporting_failure": {},
+  "pm_decision": {
+    "decision_id": "full-loop-demo-workflow.decision-1",
+    "workflow_id": "full-loop-demo-workflow",
+    "decision": "reject",
+    "selected_candidate_id": null,
+    "rationale": "Demo run ends after one round (scripted PM, not a live human).",
+    "next_round_instructions": []
+  },
+  "memory": {
+    "record_id": "demo-memory-record-1",
+    "context": null
+  },
+  "operational_events": []
 }
