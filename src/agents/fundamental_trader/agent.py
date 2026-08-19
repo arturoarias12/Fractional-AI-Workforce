@@ -1,17 +1,20 @@
-"""Quant Trader: proposes cross-asset statistical strategies, never scores them.
+"""Fundamental Trader: proposes ETF category-benchmark deviation strategies,
+never scores them.
 
 Pipeline for one ``run(TraderTask)`` call:
 
-  1. Request point-in-time price data for the permitted universe from the
-     injected ``DataService``.
+  1. Request point-in-time price data AND ETF metadata (category, fund
+     family) for the permitted universe from the injected ``DataService``
+     in a single fetch.
   2. Resolve the code-owned train/test ``ValidationSplit`` *before* looking
      for a strategy, and restrict discovery to bars strictly before the
      held-out test window - the anti-look-ahead guarantee.
-  3. Run the statistical pair scan in ``discovery.py`` to find and rank
-     candidate cross-asset mean-reversion pairs.
+  3. Run the category-benchmark deviation scan in ``rule_generator.py`` to
+     find and rank candidate boutique-tier tickers against their major-tier
+     category peers.
   4. Package the strongest candidate as a ``CandidateRuleSpecification``
      bound to the registered ``strategy.py`` executor.
-  5. Hand it to the injected ``BacktestEngine`` - Quant Trader never
+  5. Hand it to the injected ``BacktestEngine`` - Fundamental Trader never
      computes its own performance numbers.
   6. Interpret the settled result and assemble a ``TraderStrategyPackage``.
 
@@ -45,21 +48,21 @@ from protocols import (
     TraderTask,
 )
 
-from .data_adapter import extract_price_panel
-from .discovery import ProposedPair, propose_pairs
+from .data_adapter import extract_fundamental_panel, extract_price_panel
 from .errors import MandateValidationError
 from .interpretation import build_interpretation
+from .rule_generator import ProposedCategoryDeviation, propose_category_deviations
 from .services import BacktestEngine, DataService, ValidationSplitPolicy
-from .strategy import CROSS_ASSET_SPREAD_EXECUTOR_ID
+from .strategy import CATEGORY_DEVIATION_EXECUTOR_ID
 
 DEFAULT_TRADER_TIMEOUT_SECONDS = 120.0
 DEFAULT_PROPOSAL_COUNT = 3
 
 
-class QuantTraderAgent:
-    """Concrete implementation of ``agents.base.TraderAgent`` for Quant Trader."""
+class FundamentalTraderAgent:
+    """Concrete implementation of ``agents.base.TraderAgent`` for Fundamental Trader."""
 
-    trader_id = SpecialistId.QUANT_TRADER
+    trader_id = SpecialistId.FUNDAMENTAL_TRADER
 
     def __init__(
         self,
@@ -85,9 +88,9 @@ class QuantTraderAgent:
         except TimeoutError:
             return self._failed_package(
                 request,
-                stage="quant_trader.runtime",
+                stage="fundamental_trader.runtime",
                 message=(
-                    "Quant Trader exceeded its configured "
+                    "Fundamental Trader exceeded its configured "
                     f"{self._trader_timeout_seconds:g}-second deadline."
                 ),
                 retryable=True,
@@ -102,18 +105,22 @@ class QuantTraderAgent:
         except Exception as exc:  # noqa: BLE001 - normalized into a settled package
             return self._failed_package(
                 task,
-                stage="quant_trader.data_service",
+                stage="fundamental_trader.data_service",
                 message=f"DataService.fetch failed: {type(exc).__name__}: {exc}",
                 retryable=True,
                 data_request=data_request,
             )
 
-        panel = extract_price_panel(data_response)
-        if not panel:
+        price_panel = extract_price_panel(data_response)
+        fundamental_panel = extract_fundamental_panel(data_response)
+        if not price_panel or not fundamental_panel:
             return self._failed_package(
                 task,
-                stage="quant_trader.data_service",
-                message="DataService returned no usable PRICE_VOLUME artifacts.",
+                stage="fundamental_trader.data_service",
+                message=(
+                    "DataService returned no usable PRICE_VOLUME and/or "
+                    "ETF_METADATA artifacts."
+                ),
                 retryable=True,
                 data_request=data_request,
                 data_response=data_response,
@@ -136,7 +143,7 @@ class QuantTraderAgent:
         except Exception as exc:  # noqa: BLE001
             return self._failed_package(
                 task,
-                stage="quant_trader.validation_split",
+                stage="fundamental_trader.validation_split",
                 message=f"ValidationSplitPolicy.resolve failed: {type(exc).__name__}: {exc}",
                 retryable=False,
                 data_request=data_request,
@@ -147,7 +154,7 @@ class QuantTraderAgent:
             symbol: tuple(
                 bar for bar in bars if bar.timestamp.date() < split.test_start_date
             )
-            for symbol, bars in panel.items()
+            for symbol, bars in price_panel.items()
         }
         train_panel = {symbol: bars for symbol, bars in train_panel.items() if bars}
 
@@ -157,19 +164,20 @@ class QuantTraderAgent:
             and mandate.permitted_asset_universe
             else None
         )
-        proposals = propose_pairs(
+        proposals = propose_category_deviations(
             train_panel,
+            fundamental_panel,
             permitted_symbols=permitted_symbols,
             top_n=self._top_n_candidates,
         )
         if not proposals:
             return self._failed_package(
                 task,
-                stage="quant_trader.discovery",
+                stage="fundamental_trader.discovery",
                 message=(
-                    "No statistically significant, mean-reverting pair was "
-                    "found in the permitted universe during the training "
-                    "window."
+                    "No boutique-tier ticker with a sufficiently significant "
+                    "category-benchmark deviation was found in the permitted "
+                    "universe during the training window."
                 ),
                 retryable=False,
                 data_request=data_request,
@@ -181,7 +189,7 @@ class QuantTraderAgent:
         if violation is not None:
             return self._failed_package(
                 task,
-                stage="quant_trader.constraints",
+                stage="fundamental_trader.constraints",
                 message=violation,
                 retryable=False,
                 data_request=data_request,
@@ -192,20 +200,17 @@ class QuantTraderAgent:
             )
 
         candidate_spec = self._build_candidate(task, best)
-        # Declare a buy-and-hold benchmark on ticker_a now that it's known -
-        # a same-terms baseline (identical period, universe, cost
-        # assumptions) for Risk's CP-6 check to compare against. Was
-        # previously omitted, which caused every Quant Trader candidate to
-        # be vetoed on CP-6 during full-loop integration testing. Identical
-        # fix already applied to Fundamental Trader's agent.py - flagging
-        # for Shaurya's review since this file isn't Aditi's to own, but
-        # left unfixed it silently blocks every Quant Trader result from
-        # ever reaching Reporting. See docs/fundamental_trader.md.
-        plan_draft = plan_draft.model_copy(update={"benchmark": best.ticker_a})
+        # Declare a buy-and-hold benchmark on the traded ticker itself now
+        # that it's known - a same-terms baseline (identical period,
+        # universe, cost assumptions) for Risk's CP-6 check to compare
+        # against. Was previously omitted, which caused every candidate to
+        # be vetoed on CP-6 during full-loop integration testing - see
+        # docs/fundamental_trader.md.
+        plan_draft = plan_draft.model_copy(update={"benchmark": best.ticker})
         plan = BacktestPlan.from_draft(plan_draft, validation_split=split)
         backtest_request = BacktestRequest(
             request_id=f"{task.lineage.task_id}.backtest",
-            trader_id=SpecialistId.QUANT_TRADER,
+            trader_id=SpecialistId.FUNDAMENTAL_TRADER,
             lineage=task.lineage.child("backtest"),
             execution_context=task.execution_context,
             as_of_date=mandate.as_of_date,
@@ -225,7 +230,7 @@ class QuantTraderAgent:
         except Exception as exc:  # noqa: BLE001
             return self._failed_package(
                 task,
-                stage="quant_trader.backtest_engine",
+                stage="fundamental_trader.backtest_engine",
                 message=f"BacktestEngine.run failed: {type(exc).__name__}: {exc}",
                 retryable=True,
                 data_request=data_request,
@@ -238,8 +243,8 @@ class QuantTraderAgent:
         constraint_assessment = MandateConstraintAssessment(
             status=ConstraintCheckStatus.DECLARED_ALIGNED,
             mappings=[
-                f"Long-only single-pair exposure ({best.ticker_a}/{best.ticker_b}) "
-                "stays within a one-position-at-a-time risk footprint suitable "
+                f"Long-only single-ticker exposure ({best.ticker}) stays "
+                "within a one-position-at-a-time risk footprint suitable "
                 "for a research-stage mandate.",
             ],
             requires_risk_validation=True,
@@ -249,7 +254,7 @@ class QuantTraderAgent:
             return TraderStrategyPackage(
                 package_id=f"{task.lineage.task_id}.package",
                 candidate_id=candidate_spec.candidate_id,
-                trader_id=SpecialistId.QUANT_TRADER,
+                trader_id=SpecialistId.FUNDAMENTAL_TRADER,
                 lineage=task.lineage,
                 mandate_reference=mandate.reference(),
                 status=RunStatus.FAILED,
@@ -263,7 +268,7 @@ class QuantTraderAgent:
                 constraint_assessment=constraint_assessment,
                 failures=[
                     TraderFailure(
-                        stage="quant_trader.backtest_engine",
+                        stage="fundamental_trader.backtest_engine",
                         message=(
                             backtest_result.failure_reason
                             or f"Backtest engine reported status "
@@ -280,7 +285,7 @@ class QuantTraderAgent:
         return TraderStrategyPackage(
             package_id=f"{task.lineage.task_id}.package",
             candidate_id=candidate_spec.candidate_id,
-            trader_id=SpecialistId.QUANT_TRADER,
+            trader_id=SpecialistId.FUNDAMENTAL_TRADER,
             lineage=task.lineage,
             mandate_reference=mandate.reference(),
             status=RunStatus.COMPLETED,
@@ -305,20 +310,34 @@ class QuantTraderAgent:
         return DataRequest(
             request_id=f"{task.lineage.task_id}.data",
             lineage=task.lineage.child("data"),
-            trader_id=SpecialistId.QUANT_TRADER,
+            trader_id=SpecialistId.FUNDAMENTAL_TRADER,
             as_of_date=mandate.as_of_date,
             purpose=(
-                "Cross-asset correlation and mean-reversion pair discovery "
-                "for the Quant Trader lens."
+                "Category-benchmark deviation discovery for the Fundamental "
+                "Trader lens: price history for backtesting plus ETF "
+                "category/fund-family metadata for the ISSUER_SCALE_TIER "
+                "heuristic."
             ),
             asset_universe=mandate.permitted_asset_universe,
-            categories=[DataCategory.PRICE_VOLUME],
+            categories=[DataCategory.PRICE_VOLUME, DataCategory.ETF_METADATA],
             fields=[
                 DataFieldRequirement(
                     name="close",
-                    purpose="Daily close prices for correlation and spread analysis.",
+                    purpose="Daily close prices for return/spread analysis.",
                     required=True,
                     point_in_time_required=True,
+                ),
+                DataFieldRequirement(
+                    name="category",
+                    purpose="Groups ETFs into comparable exposure sets.",
+                    required=True,
+                    point_in_time_required=False,
+                ),
+                DataFieldRequirement(
+                    name="fund_family",
+                    purpose="Drives the ISSUER_SCALE_TIER major/boutique split.",
+                    required=True,
+                    point_in_time_required=False,
                 ),
             ],
             end_date=mandate.as_of_date,
@@ -327,67 +346,73 @@ class QuantTraderAgent:
         )
 
     @staticmethod
-    def _hypothesis(proposal: ProposedPair) -> str:
+    def _hypothesis(proposal: ProposedCategoryDeviation) -> str:
         return (
-            f"{proposal.ticker_a} is statistically likely to converge back "
-            f"toward its historical price relationship with {proposal.ticker_b} "
-            "after diverging by an unusual amount."
+            f"{proposal.ticker} is statistically likely to converge back "
+            f"toward the return of its \"{proposal.category}\" category's "
+            "major-issuer peers after diverging by an unusual amount."
         )
 
     @staticmethod
-    def _evidence_payload(proposal: ProposedPair) -> dict[str, Any]:
+    def _evidence_payload(proposal: ProposedCategoryDeviation) -> dict[str, Any]:
         evidence = proposal.evidence
         return {
-            "ticker_a": evidence.ticker_a,
-            "ticker_b": evidence.ticker_b,
+            "ticker": evidence.ticker,
+            "category": evidence.category,
+            "fund_family": evidence.fund_family,
+            "benchmark_tickers": list(evidence.benchmark_tickers),
             "correlation": evidence.correlation,
-            "half_life_days": evidence.half_life_days,
+            "current_zscore": evidence.current_zscore,
             "shared_trading_days": evidence.shared_trading_days,
             "score": evidence.score,
         }
 
     @staticmethod
-    def _check_prohibited_assets(proposal: ProposedPair, mandate: Any) -> str | None:
+    def _check_prohibited_assets(
+        proposal: ProposedCategoryDeviation, mandate: Any,
+    ) -> str | None:
         prohibited = {item.casefold() for item in mandate.prohibited_assets}
         hit = [
-            symbol for symbol in (proposal.ticker_a, proposal.ticker_b)
+            symbol for symbol in (proposal.ticker, *proposal.benchmark_tickers)
             if symbol.casefold() in prohibited
         ]
         if hit:
             return (
-                "Proposed pair references a prohibited asset under this "
+                "Proposed candidate references a prohibited asset under this "
                 f"mandate: {', '.join(hit)}."
             )
         return None
 
     def _build_candidate(
-        self, task: TraderTask, proposal: ProposedPair,
+        self, task: TraderTask, proposal: ProposedCategoryDeviation,
     ) -> CandidateRuleSpecification:
-        evidence_id = (
-            f"quant_trader.pair_scan.{proposal.ticker_a}_{proposal.ticker_b}"
-        )
+        evidence_id = f"fundamental_trader.category_scan.{proposal.ticker}"
         draft = CandidateRuleDraft(
             strategy_name=(
-                f"Cross-asset spread mean reversion: "
-                f"{proposal.ticker_a}/{proposal.ticker_b}"
+                f"Category-benchmark deviation: {proposal.ticker} vs. "
+                f"\"{proposal.category}\" major-tier peers"
             ),
             hypothesis=self._hypothesis(proposal),
             rule_summary=(
-                f"Trade the {proposal.ticker_a}/{proposal.ticker_b} price "
-                f"ratio: go long {proposal.ticker_a} when its z-score versus "
-                f"{proposal.ticker_b} falls to -{proposal.entry_zscore}, exit "
-                f"back to cash once it recovers to -{proposal.exit_zscore}."
+                f"Trade {proposal.ticker} against the equal-weight return of "
+                f"its category's major-tier peers "
+                f"({', '.join(proposal.benchmark_tickers)}): go long "
+                f"{proposal.ticker} when its z-score deviation falls to "
+                f"-{proposal.entry_zscore}, exit back to cash once it "
+                f"recovers to -{proposal.exit_zscore}."
             ),
-            executor_id=CROSS_ASSET_SPREAD_EXECUTOR_ID,
+            executor_id=CATEGORY_DEVIATION_EXECUTOR_ID,
             asset_eligibility_logic=(
-                f"Requires point-in-time history for both {proposal.ticker_a} "
-                f"and {proposal.ticker_b} covering at least "
-                f"{proposal.lookback_days} trading days at every rebalance."
+                f"Requires point-in-time history for {proposal.ticker} and "
+                f"all of {', '.join(proposal.benchmark_tickers)} covering at "
+                f"least {proposal.lookback_days} trading days at every "
+                "rebalance."
             ),
             signal_logic=(
-                f"Daily z-score of the {proposal.ticker_a}/{proposal.ticker_b} "
-                f"closing-price ratio over a trailing {proposal.lookback_days}"
-                "-day rolling window."
+                f"Daily z-score of the return spread between {proposal.ticker} "
+                "and the equal-weight return of its major-tier category "
+                f"peers, over a trailing {proposal.lookback_days}-day rolling "
+                "window."
             ),
             position_logic=(
                 "Single position: fully allocate to the long leg when in the "
@@ -395,11 +420,11 @@ class QuantTraderAgent:
                 "leverage 1.0x."
             ),
             entry_logic=(
-                f"Enter when the ratio z-score falls to or below "
+                f"Enter when the spread z-score falls to or below "
                 f"-{proposal.entry_zscore}."
             ),
             exit_logic=(
-                f"Exit when the ratio z-score rises back to or above "
+                f"Exit when the spread z-score rises back to or above "
                 f"-{proposal.exit_zscore}."
             ),
             rebalancing_logic=(
@@ -410,21 +435,30 @@ class QuantTraderAgent:
             specialty_evidence_ids=[evidence_id],
             specialty_evidence_usage={
                 evidence_id: (
-                    "Correlation and AR(1) mean-reversion half-life evidence "
-                    "used to select this pair and size its lookback window."
+                    "Category-benchmark correlation and deviation z-score "
+                    "evidence used to select this ticker and its lookback "
+                    "window."
                 ),
             },
-            required_data_fields=["close"],
+            required_data_fields=["close", "category", "fund_family"],
             constraint_handling=[
-                "Long-only, single-pair, unlevered - stays within a "
+                "Long-only, single-ticker, unlevered - stays within a "
                 "research-stage mandate's default risk footprint.",
             ],
-            implementation_notes=[proposal.rationale],
+            implementation_notes=[
+                proposal.rationale,
+                "Category benchmark is an in-house equal-weight average of "
+                "major-tier issuer peers in the same ETF_info.xlsx category, "
+                "not a licensed index.",
+                "ISSUER_SCALE_TIER (major vs. boutique fund family) "
+                "substitutes for expense ratio / dividend yield / NAV "
+                "premium-discount, which are not populated in this fixture.",
+            ],
         )
         return CandidateRuleSpecification(
             **draft.model_dump(mode="python"),
             candidate_id=f"{task.lineage.task_id}.candidate",
-            trader_id=SpecialistId.QUANT_TRADER,
+            trader_id=SpecialistId.FUNDAMENTAL_TRADER,
             lineage=task.lineage.child("candidate"),
         )
 
@@ -446,7 +480,7 @@ class QuantTraderAgent:
         return TraderStrategyPackage(
             package_id=f"{task.lineage.task_id}.package",
             candidate_id=candidate_rule.candidate_id if candidate_rule else None,
-            trader_id=SpecialistId.QUANT_TRADER,
+            trader_id=SpecialistId.FUNDAMENTAL_TRADER,
             lineage=task.lineage,
             mandate_reference=task.mandate.reference(),
             status=status,
@@ -470,4 +504,4 @@ class QuantTraderAgent:
         )
 
 
-__all__ = ["QuantTraderAgent"]
+__all__ = ["FundamentalTraderAgent"]
