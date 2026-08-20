@@ -36,27 +36,45 @@ ETF_info.xlsx
 
 The local pilot runs this workflow:
 
-`PM mandate → Fundamental + Quant → Risk → Reporting → dashboard snapshot`
+`PM mandate → parallel traders → Risk → Reporting → PM decision → Memory / next round`
 
 - Fundamental, Quant, Risk, and Reporting use the team's current code.
 - The dashboard renders candidate rules, held-out backtest metrics, Risk review,
-  and the PM-facing comparison without requiring an LLM.
+  a PM-facing comparison, and a human PM decision.
+- While a PM decision is pending, the trader detail pages provide next-round
+  Hire, Bench, and Pivot controls. A Pivot excludes the trader's current
+  candidate ticker and records its reason in the next-round mandate.
+- The live form's horizon, risk profile, rebalancing preference, risk limits,
+  constraints, and ticker-exclusion notes are translated into documented
+  Fundamental/Quant directives; the applied directives are visible on the
+  Dashboard.
 - The dashboard reads workflow state through a stable snapshot contract:
   `WorkflowState → workflow_adapter → workflow_snapshot.json → dashboard`.
 
+### Optional Reporting memo
+
+The Reporting Agent always produces a structured candidate comparison. To
+also generate an LLM-written narrative memo, install the optional provider
+dependency and set a Gemini key in the environment that runs the workflow:
+
+```bash
+.venv/bin/pip install -e '.[reporting-models]'
+export GEMINI_API_KEY='your-key-here'
+```
+
+Do not commit or share API keys. Without this configuration, the Dashboard
+shows the structured comparison and clearly labels the missing narrative memo.
+
 ## Current limitations
 
-- Technical Trader is shown as unavailable because the repository does not yet
-  provide a concrete `ModelClient`.
-- The final PM decision is scripted as `Reject` in this one-round pilot.
-  Select / Reject / Another Round are not yet connected to workflow resume.
-- In the live pilot, as-of date, permitted ETF universe, and prohibited assets
-  affect Fundamental and Quant. Other PM mandate fields are preserved but do
-  not yet change their fixed research rules.
+- Technical Trader requires a separately configured OpenAI or Anthropic model
+  provider and API key; otherwise it settles as a clearly labelled failed
+  package while the remaining workflow continues.
+- Reporting's optional Gemini narrative memo also requires its own environment
+  key. It is not generated merely because the model-client code is present.
 - The ETF workbooks are offline historical data. The current fixture ends on
   `2026-06-29`; it is for backtesting, not a live market recommendation.
-- Task duration is available from lifecycle state. Success rate, API cost,
-  retries, and failure counts show `N/A` until the workflow emits operational
-  event records.
-- Hire, Bench, and Pivot are simulated interactions only; they do not yet
-  change the next live workflow run.
+- Success rate measures workflow execution reliability, not investment return.
+  A fresh one-attempt workflow will naturally show 100% for agents that
+  completed successfully. Cost is `N/A` when the underlying provider does not
+  report a monetary amount.

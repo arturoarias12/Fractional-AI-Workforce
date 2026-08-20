@@ -525,7 +525,22 @@ def _build_nodes(memory_store: FileBackedMemoryStore) -> "ProductionNodeSet":
 
     # --- Real Risk + Reporting ---
     risk_agent = RiskAgentImpl()
-    reporting = RecordingReportingNode(ReportingAgentImpl())
+    # Reporting can write a Gemini memo when the runner is launched in an
+    # environment that has Emma's GEMINI_API_KEY.  The deterministic
+    # comparison remains available without credentials, so classmates can
+    # still run the complete offline loop locally.
+    try:
+        from services.gemini_model_client import GeminiModelClient
+
+        reporting_agent = ReportingAgentImpl(model_client=GeminiModelClient())
+        print("Reporting Agent: Gemini memo generation enabled.")
+    except (ImportError, KeyError):
+        reporting_agent = ReportingAgentImpl()
+        print(
+            "Reporting Agent: structured comparison only. Set GEMINI_API_KEY "
+            "to enable the optional narrative memo."
+        )
+    reporting = RecordingReportingNode(reporting_agent)
 
     return ProductionNodeSet(
         memory_read=memory_read_node,

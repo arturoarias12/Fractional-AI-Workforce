@@ -406,6 +406,56 @@ def format_decimal(value: Any) -> str:
     return f"{value:.2f}" if isinstance(value, (int, float)) else "N/A"
 
 
+def candidate_label(snapshot: dict[str, Any], candidate_id: str) -> str:
+    """Return a PM-readable label instead of exposing an internal ID."""
+
+    candidates = snapshot.get("reporting", {}).get("comparison", {}).get("candidates", [])
+    candidate = next(
+        (item for item in candidates if item.get("candidate_id") == candidate_id),
+        {},
+    )
+    trader_id = str(candidate.get("trader_id", ""))
+    dashboard_id = {
+        "fundamental_trader_agent": "fundamental",
+        "quant_trader_agent": "quant",
+        "technical_trader_agent": "technical",
+    }.get(trader_id)
+    package = (
+        snapshot.get("agents", {}).get(dashboard_id or "", {}).get("package", {})
+    )
+    parameters = (package.get("candidate_rule") or {}).get("parameters") or {}
+    symbols = parameters.get("ticker") or "/".join(
+        item for item in (parameters.get("ticker_a"), parameters.get("ticker_b")) if item
+    )
+    lens = trader_id.replace("_agent", "").replace("_", " ").title() or "Candidate"
+    return f"{lens} — {symbols or 'strategy candidate'}"
+
+
+def applied_mandate_notes(snapshot: dict[str, Any]) -> list[str]:
+    """Collect explicit directive notes emitted by the trader packages."""
+
+    notes: list[str] = []
+    for agent_id in ("fundamental", "quant", "technical"):
+        package = snapshot.get("agents", {}).get(agent_id, {}).get("package", {})
+        rule = package.get("candidate_rule") or {}
+        for note in rule.get("implementation_notes") or []:
+            text = str(note)
+            if any(
+                term in text
+                for term in (
+                    "risk_profile",
+                    "investment_horizon",
+                    "rebalancing_preference",
+                    "risk_limits",
+                    "leverage",
+                    "short",
+                    "PIVOT",
+                )
+            ) and text not in notes:
+                notes.append(text)
+    return notes
+
+
 def package_for(agent: dict[str, Any]) -> dict[str, Any]:
     """Read the detailed strategy package, when this agent produced one."""
 
@@ -524,8 +574,8 @@ def pm_request_dialog() -> None:
     st.caption("The form creates a schema-valid PM mandate. In live-pilot mode, it becomes the input for the research workflow.")
     st.info(
         "Current live-pilot behavior: as-of date, permitted ETF universe, and prohibited assets affect the available research data. "
-        "Objective, risk profile, horizon, leverage, short-selling, risk limits, and notes are preserved in the mandate and snapshot, "
-        "but the current Fundamental/Quant implementations do not yet use them to change their fixed research rules."
+        "Risk profile, horizon, rebalancing preference, risk limits, leverage/short-selling constraints, and ticker exclusions in PM notes "
+        "are translated into documented rule directives for Fundamental and Quant. The free-text objective remains descriptive."
     )
     st.caption(
         f"Offline historical-data pilot: this fixture ends on {OFFLINE_DATA_MAX_DATE.isoformat()}. "
@@ -713,6 +763,12 @@ def dashboard() -> None:
             )
         else:
             st.info("No research request has been submitted. Create a PM Research Request to begin.")
+        if snapshot:
+            directive_notes = applied_mandate_notes(snapshot)
+            if directive_notes:
+                with st.expander("How the PM mandate affected this run", expanded=False):
+                    for note in directive_notes:
+                        st.write(f"• {note}")
     with controls:
         st.write("")
         if st.button("Create PM Research Request", type="primary", use_container_width=True):
@@ -806,7 +862,11 @@ def dashboard() -> None:
         for col, agent_id in zip(columns, row):
             agent = agents[agent_id]
             with col:
-                staffing_status = agent.get("staffing_status") if snapshot else st.session_state.staffing[agent_id]
+                staffing_status = (
+                    st.session_state.staffing[agent_id]
+                    if snapshot and workflow.get("status") == "Waiting for PM Decision"
+                    else agent.get("staffing_status") if snapshot else st.session_state.staffing[agent_id]
+                )
                 st.markdown(f"<div class='agent-name'>{agent['name']}</div>{status_badge(agent['state'])} &nbsp; <span style='font-size:.85rem'>Next round: {staffing_status}</span>", unsafe_allow_html=True)
                 st.caption(agent["role"])
                 st.write(f"**Current task:** {agent['task']}")
@@ -849,7 +909,14 @@ def agent_detail() -> None:
         st.session_state.view = "dashboard"
         st.rerun()
     st.title(agent["name"])
-    staffing_status = agent.get("staffing_status") if snapshot else st.session_state.staffing[agent_id]
+    awaiting_pm_decision = bool(
+        snapshot and snapshot.get("workflow", {}).get("status") == "Waiting for PM Decision"
+    )
+    staffing_status = (
+        st.session_state.staffing[agent_id]
+        if awaiting_pm_decision
+        else agent.get("staffing_status") if snapshot else st.session_state.staffing[agent_id]
+    )
     st.caption(f"{agent['role']} · Next-round staffing: {staffing_status}")
     st.markdown(status_badge(agent["state"]), unsafe_allow_html=True)
 
@@ -891,14 +958,20 @@ def agent_detail() -> None:
         st.subheader("Risk Feedback")
         st.info(agent["risk_feedback"])
     st.subheader("Staffing Actions")
-    if snapshot:
-        st.caption("Snapshot mode is read-only. Staffing decisions must be made by the PM workflow, then exported again.")
+    if agent_id not in {"technical", "fundamental", "quant"}:
+        st.caption("Risk Review and Reporting are downstream workflow stages, not next-round staffing choices.")
         return
-    if st.session_state.phase != "completed":
+    if snapshot and not awaiting_pm_decision:
+        st.caption("This workflow is closed. Staffing choices are available only while a PM decision is pending.")
+        return
+    if not snapshot and st.session_state.phase != "completed":
         st.caption("Staffing changes are available after the current round is completed and apply to the next round.")
         return
 
-    st.caption("These actions are recorded for the next research round. They do not alter a completed round.")
+    st.caption(
+        "These choices configure the next round only. Pivot excludes this agent's current "
+        "candidate ticker and records your reason in the next-round mandate."
+    )
     staffing_status = st.session_state.staffing[agent_id]
     actions = ["Hire"] if staffing_status == "Benched" else ["Bench", "Pivot"]
     buttons = st.columns(len(actions))
@@ -1043,7 +1116,7 @@ def report_page() -> None:
             selected = st.selectbox(
                 "Candidate to select (if choosing Select Strategy)",
                 options=surviving_ids,
-                format_func=lambda cid: cid.split(".")[-2].replace("_", " ").title() if "." in cid else cid,
+                format_func=lambda cid: candidate_label(snapshot, cid),
             )
         else:
             selected = None
