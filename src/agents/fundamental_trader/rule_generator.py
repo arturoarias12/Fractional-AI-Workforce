@@ -145,24 +145,42 @@ def propose_category_deviations(
     fundamental_panel: FundamentalPanel,
     *,
     permitted_symbols: Sequence[str] | None = None,
+    excluded_tickers: frozenset[str] | Sequence[str] = frozenset(),
     top_n: int = 3,
     entry_zscore: float = DEFAULT_ENTRY_ZSCORE,
     exit_zscore: float = DEFAULT_EXIT_ZSCORE,
+    preferred_lookback_days: int | None = None,
 ) -> list[ProposedCategoryDeviation]:
     """Rank boutique-tier tickers by how far they've drifted from their
     category's major-tier benchmark, and return the strongest candidates.
+
+    ``excluded_tickers`` removes specific boutique-tier tickers from
+    consideration this round (e.g. from a PM's Pivot action or mandate
+    directive - see mandate_directives.py) without touching the permitted
+    universe itself. ``preferred_lookback_days``, if given, tries only that
+    window instead of scanning all three defaults.
     """
     closes = _panel_to_wide_closes(price_panel)
     if closes.empty:
         return []
     returns = closes.pct_change(fill_method=None).dropna(how="all")
+    excluded = {t.upper() for t in excluded_tickers}
+    lookback_candidates = (
+        (preferred_lookback_days,)
+        if preferred_lookback_days is not None
+        else (MIN_LOOKBACK_DAYS, 40, MAX_LOOKBACK_DAYS)
+    )
 
     groups = _category_groups(fundamental_panel, permitted_symbols)
     proposals: list[ProposedCategoryDeviation] = []
 
     for category, members in groups.items():
         major = [m for m in members if m.issuer_tier == "major" and m.ticker in returns.columns]
-        boutique = [m for m in members if m.issuer_tier == "boutique" and m.ticker in returns.columns]
+        boutique = [
+            m for m in members
+            if m.issuer_tier == "boutique" and m.ticker in returns.columns
+            and m.ticker.upper() not in excluded
+        ]
         if len(major) < MIN_BENCHMARK_PEERS or not boutique:
             continue
 
@@ -178,7 +196,7 @@ def propose_category_deviations(
                 continue
 
             spread = aligned["ticker"] - aligned["benchmark"]
-            for lookback_days in (MIN_LOOKBACK_DAYS, 40, MAX_LOOKBACK_DAYS):
+            for lookback_days in lookback_candidates:
                 if len(spread) <= lookback_days:
                     continue
                 window = spread.iloc[-lookback_days:]

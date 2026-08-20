@@ -135,15 +135,32 @@ def launch_live_resume(
     forward whatever staffing change the PM just made - the two actions
     (decide, and update staffing for next round) happen together, matching
     the staffing dialog's own caption ("apply to the next round").
+
+    Pivot gets a real effect the same way: any pending pivot lessons
+    (tagged "PIVOT[<agent_id>]: ..." in staffing_dialog) are merged into
+    the current mandate's prior_round_lessons and sent as part of the same
+    state_update, so mandate_directives.py's parser picks them up on the
+    next round - see src/mandate_directives.py.
     """
+
+    state_update: dict[str, Any] = {
+        "active_specialists": _active_specialists_from_staffing()
+    }
+    if st.session_state.pending_pivot_lessons:
+        current_mandate = dict(st.session_state.pm_mandate or {})
+        existing_lessons = list(current_mandate.get("prior_round_lessons") or [])
+        current_mandate["prior_round_lessons"] = (
+            existing_lessons + list(st.session_state.pending_pivot_lessons)
+        )
+        state_update["pm_mandate"] = current_mandate
+        st.session_state.pm_mandate = current_mandate
+        st.session_state.pending_pivot_lessons = []
 
     LIVE_DECISION_PATH.write_text(
         json.dumps(
             {
                 "pm_decision": pm_decision,
-                "state_update": {
-                    "active_specialists": _active_specialists_from_staffing()
-                },
+                "state_update": state_update,
             },
             indent=2,
         ),
@@ -305,6 +322,7 @@ def init_state() -> None:
         ],
         "notice": "", "data_source": "Current workflow", "run_live_pilot": True,
         "live_snapshot_ready": False, "live_process": None,
+        "pending_pivot_lessons": [],
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -595,11 +613,41 @@ def staffing_dialog(agent_id: str, action: str) -> None:
         timestamp = datetime.now().strftime("%H:%M")
         if action == "Pivot":
             entry = f"{timestamp} — PM pivoted {agent['name']} for Round {st.session_state.round_number + 1}: {reason}"
+            # Give this a real effect, not just a UI note: tag the lesson to
+            # this specific agent's SpecialistId so mandate_directives.py's
+            # PIVOT[...] parser excludes its current candidate next round -
+            # see src/mandate_directives.py for exactly what this does.
+            specialist_id = STAFFING_KEY_TO_SPECIALIST_ID.get(agent_id)
+            if specialist_id:
+                candidate_ticker = _current_candidate_ticker(agent_id)
+                if candidate_ticker:
+                    st.session_state.pending_pivot_lessons.append(
+                        f"PIVOT[{specialist_id}]: exclude {candidate_ticker} - {reason}"
+                    )
+                else:
+                    st.session_state.pending_pivot_lessons.append(
+                        f"PIVOT[{specialist_id}]: {reason} (no current candidate identified to exclude)"
+                    )
         else:
             entry = f"{timestamp} — PM chose to {action.lower()} {agent['name']} for Round {st.session_state.round_number + 1}. Reason: {reason}"
         st.session_state.memory.insert(0, entry)
         st.session_state.notice = f"{agent['name']} is marked {new_status} for the next research round. Decision saved to Memory."
         st.rerun()
+
+
+def _current_candidate_ticker(agent_id: str) -> str | None:
+    """Pull the ticker this agent most recently proposed, from the live
+    snapshot, so Pivot can tell mandate_directives.py exactly what to
+    exclude next round. Returns None outside live mode or if unavailable -
+    Pivot still records a lesson either way, just without a specific
+    exclusion (see staffing_dialog)."""
+    snapshot = snapshot_data()
+    if not snapshot:
+        return None
+    agent_entry = snapshot.get("agents", {}).get(agent_id, {})
+    package = agent_entry.get("package") or {}
+    parameters = (package.get("candidate_rule") or {}).get("parameters") or {}
+    return parameters.get("ticker") or parameters.get("ticker_a")
 
 
 def show_header() -> None:

@@ -86,6 +86,100 @@ def _synthetic_fundamentals() -> dict[str, ETFFundamentals]:
     }
 
 
+def _synthetic_panel_with_two_boutique_tickers() -> dict[str, tuple[PriceBar, ...]]:
+    """Same pattern as _synthetic_panel, plus a second, milder boutique-tier
+    divergence (BOUT2) - used to prove excluding BOUT genuinely changes
+    which candidate gets proposed, rather than just removing all candidates.
+    """
+    panel = dict(_synthetic_panel())
+    start = date(2023, 1, 2)
+    n = 260
+    base = 100.0
+    boutique2_closes: list[float] = []
+    price = base
+    for i in range(n):
+        drift = 0.0005 * (i % 7 - 3)
+        price = price * (1 + drift)
+        if i < n - 15:
+            boutique2_closes.append(price * 0.995)
+        else:
+            gap = 0.004 * (i - (n - 15))  # milder divergence than BOUT's
+            boutique2_closes.append(price * (0.995 - gap))
+    panel["BOUT2"] = _build_bars("BOUT2", boutique2_closes, start)
+    return panel
+
+
+def _synthetic_fundamentals_with_two_boutique_tickers() -> dict[str, ETFFundamentals]:
+    fundamentals = dict(_synthetic_fundamentals())
+    fundamentals["BOUT2"] = ETFFundamentals(
+        ticker="BOUT2", category="Test Category", fund_family="Global X", issuer_tier="boutique",
+    )
+    return fundamentals
+
+
+def test_pivot_exclusion_changes_which_candidate_gets_proposed() -> None:
+    """End-to-end: a PM Pivot action (tagged lesson) against this specific
+    agent genuinely changes discovery's output, not just the resolver in
+    isolation - see test_mandate_directives.py for the resolver-level tests.
+    """
+    panel = _synthetic_panel_with_two_boutique_tickers()
+    fundamentals = _synthetic_fundamentals_with_two_boutique_tickers()
+
+    agent = FundamentalTraderAgent(
+        data_service=_FakeDataService(panel, fundamentals),
+        backtest_engine=DeterministicBacktestEngine(
+            data_resolver=_FakeBacktestResolver(panel),
+            strategy_executors=[category_deviation_executor],
+        ),
+        validation_split_policy=_FixedPercentileSplit(0.97),
+    )
+    runtime = FundamentalTraderRuntime(agent=agent)
+
+    baseline_mandate = _build_mandate(["MAJA", "MAJB", "BOUT", "BOUT2"])
+    baseline_package = asyncio.run(runtime.research(baseline_mandate))
+    baseline_ticker = baseline_package.candidate_rule.parameters["ticker"]
+    other_ticker = "BOUT" if baseline_ticker == "BOUT2" else "BOUT2"
+
+    pivoted_mandate = _build_mandate(
+        ["MAJA", "MAJB", "BOUT", "BOUT2"],
+        prior_round_lessons=[
+            f"PIVOT[fundamental_trader_agent]: exclude {baseline_ticker}, try a different candidate.",
+        ],
+    )
+    pivoted_package = asyncio.run(runtime.research(pivoted_mandate))
+
+    assert pivoted_package.candidate_rule.parameters["ticker"] == other_ticker
+    assert any(
+        "PIVOT" in note or f"excluded {baseline_ticker}" in note
+        for note in pivoted_package.candidate_rule.implementation_notes
+    )
+
+
+def test_conservative_risk_profile_raises_the_candidates_entry_zscore() -> None:
+    """End-to-end: risk_profile actually changes the proposed rule's
+    parameters, not just an internal resolver value."""
+    panel = _synthetic_panel()
+    fundamentals = _synthetic_fundamentals()
+
+    agent = FundamentalTraderAgent(
+        data_service=_FakeDataService(panel, fundamentals),
+        backtest_engine=DeterministicBacktestEngine(
+            data_resolver=_FakeBacktestResolver(panel),
+            strategy_executors=[category_deviation_executor],
+        ),
+        validation_split_policy=_FixedPercentileSplit(0.97),
+    )
+    runtime = FundamentalTraderRuntime(agent=agent)
+
+    baseline_package = asyncio.run(runtime.research(_build_mandate(["MAJA", "MAJB", "BOUT"])))
+    conservative_mandate = _build_mandate(["MAJA", "MAJB", "BOUT"], risk_profile="conservative")
+    conservative_package = asyncio.run(runtime.research(conservative_mandate))
+
+    baseline_entry = baseline_package.candidate_rule.parameters["entry_zscore"]
+    conservative_entry = conservative_package.candidate_rule.parameters["entry_zscore"]
+    assert conservative_entry == round(baseline_entry * 1.3, 10) or conservative_entry > baseline_entry
+
+
 class _FakeDataService:
     def __init__(self, panel, fundamentals) -> None:
         self._panel = panel
@@ -157,13 +251,14 @@ class _EmptyDataService:
         )
 
 
-def _build_mandate(universe: list[str]) -> PMMandate:
+def _build_mandate(universe: list[str], **extra) -> PMMandate:
     return PMMandate(
         workflow_id="test-workflow",
         task_id="test-task",
         as_of_date=date(2023, 12, 1),
         investment_objective="Unit test of Fundamental Trader category-deviation logic.",
         permitted_asset_universe=universe,
+        **extra,
     )
 
 

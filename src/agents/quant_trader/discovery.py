@@ -167,23 +167,35 @@ def propose_pairs(
     panel: PricePanel,
     *,
     permitted_symbols: Sequence[str] | None = None,
+    excluded_tickers: frozenset[str] | Sequence[str] = frozenset(),
     top_n: int = 3,
     min_correlation: float = MIN_CORRELATION,
     min_history_days: int = MIN_HISTORY_DAYS,
     max_half_life_days: float = MAX_HALF_LIFE_DAYS,
     entry_zscore: float = DEFAULT_ENTRY_ZSCORE,
     exit_zscore: float = DEFAULT_EXIT_ZSCORE,
+    preferred_lookback_days: int | None = None,
 ) -> list[ProposedPair]:
     """Scan the training-window panel and return up to ``top_n`` candidates.
 
     Ranking rewards both a strong relationship and a fast snap-back: a
     pair that reverts in two weeks gives far more tradeable opportunities
     over a fixed evaluation window than one that takes three months.
+
+    ``excluded_tickers`` drops any pair involving one of these symbols
+    (e.g. from a PM's Pivot action or mandate directive - see
+    mandate_directives.py), without touching the permitted universe
+    itself. ``preferred_lookback_days``, if given, overrides the
+    half-life-derived lookback rather than deriving it from the pair's
+    measured mean-reversion speed.
     """
     wide_closes = _panel_to_wide_closes(panel)
     if permitted_symbols:
         allowed = set(permitted_symbols)
         wide_closes = wide_closes[[c for c in wide_closes.columns if c in allowed]]
+    excluded = {t.upper() for t in excluded_tickers}
+    if excluded:
+        wide_closes = wide_closes[[c for c in wide_closes.columns if c.upper() not in excluded]]
 
     candidates: list[PairEvidence] = []
     for pair in find_correlated_pairs(
@@ -214,10 +226,14 @@ def propose_pairs(
 
     proposals: list[ProposedPair] = []
     for evidence in candidates[:top_n]:
-        lookback_days = int(min(
-            max(round(evidence.half_life_days * 2), MIN_LOOKBACK_DAYS),
-            MAX_LOOKBACK_DAYS,
-        ))
+        lookback_days = (
+            preferred_lookback_days
+            if preferred_lookback_days is not None
+            else int(min(
+                max(round(evidence.half_life_days * 2), MIN_LOOKBACK_DAYS),
+                MAX_LOOKBACK_DAYS,
+            ))
+        )
         rationale = (
             f"{evidence.ticker_a} and {evidence.ticker_b} moved together closely "
             f"during the training window (correlation {evidence.correlation} over "
