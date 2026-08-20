@@ -72,6 +72,10 @@ LIVE_LOG_PATH = REPO_ROOT / "dashboard" / "data" / "live_workflow.log"
 # Updated together with the offline workbook. This keeps the PM date truthful:
 # the current fixture's last observed trading date is 2026-06-29.
 OFFLINE_DATA_MAX_DATE = date(2026, 6, 29)
+# The Risk framework allows at most three validation-touch rounds. Keeping the
+# PM controls aligned with that guard prevents a request that is guaranteed to
+# be vetoed only because it exceeds the research budget.
+MAX_RESEARCH_ROUNDS = 3
 
 # Maps this dashboard's short staffing keys (make_agents' dict keys) to the
 # SpecialistId strings the backend graph's active_specialists check expects
@@ -90,7 +94,7 @@ def _active_specialists_from_staffing() -> list[str]:
     """Translate the PM's current Hire/Bench choices into backend agent ids."""
     return [
         STAFFING_KEY_TO_SPECIALIST_ID[key]
-        for key, status in st.session_state.staffing.items()
+        for key, status in effective_staffing().items()
         if status == "Active" and key in STAFFING_KEY_TO_SPECIALIST_ID
     ]
 
@@ -177,6 +181,9 @@ def launch_live_resume(
         ),
         encoding="utf-8",
     )
+    # The choice has now been handed to the workflow. A later completed round
+    # starts with a fresh set of staffing choices for its own next round.
+    st.session_state.next_round_actions = {}
     venv_python = REPO_ROOT / ".venv" / "bin" / "python"
     python = str(venv_python if venv_python.exists() else Path(sys.executable))
     with LIVE_LOG_PATH.open("w", encoding="utf-8") as log_file:
@@ -334,6 +341,7 @@ def init_state() -> None:
         "notice": "", "data_source": "Current workflow", "run_live_pilot": True,
         "live_snapshot_ready": False, "live_process": None,
         "pending_pivot_lessons": [],
+        "next_round_actions": {},
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -366,6 +374,25 @@ def snapshot_data() -> dict[str, Any] | None:
     except (OSError, ValueError) as error:
         st.warning(f"Could not load workflow snapshot: {error}")
         return None
+
+
+def effective_staffing(snapshot: dict[str, Any] | None = None) -> dict[str, str]:
+    """Return the staffing that would be sent into the next live round.
+
+    A graph-exported snapshot is authoritative for the current round. Browser
+    session state only overlays a staffing decision the PM has made during the
+    currently open review, so stale demo state cannot turn a benched trader
+    back into Active on screen or in the workflow input.
+    """
+    snapshot = snapshot if snapshot is not None else snapshot_data()
+    staffing = dict(st.session_state.staffing)
+    if snapshot and snapshot.get("workflow", {}).get("status") == "Waiting for PM Decision":
+        for agent_id, agent in snapshot.get("agents", {}).items():
+            if agent_id in staffing and agent.get("staffing_status"):
+                staffing[agent_id] = agent["staffing_status"]
+    for agent_id, action in st.session_state.next_round_actions.items():
+        staffing[agent_id] = {"Hire": "Active", "Bench": "Benched", "Pivot": "Active"}[action]
+    return staffing
 
 
 def current_agents(snapshot: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
@@ -671,9 +698,13 @@ def staffing_dialog(agent_id: str, action: str) -> None:
     if right.button("Confirm", type="primary", use_container_width=True):
         new_status = {"Hire": "Active", "Bench": "Benched", "Pivot": "Active"}[action]
         st.session_state.staffing[agent_id] = new_status
+        st.session_state.next_round_actions[agent_id] = action
         timestamp = datetime.now().strftime("%H:%M")
+        snapshot = snapshot_data()
+        live_round = (snapshot or {}).get("workflow", {}).get("round_number")
+        next_round = int(live_round) + 1 if live_round else st.session_state.round_number + 1
         if action == "Pivot":
-            entry = f"{timestamp} — PM pivoted {agent['name']} for Round {st.session_state.round_number + 1}: {reason}"
+            entry = f"{timestamp} — PM pivoted {agent['name']} for Round {next_round}: {reason}"
             # Give this a real effect, not just a UI note: tag the lesson to
             # this specific agent's SpecialistId so mandate_directives.py's
             # PIVOT[...] parser excludes its current candidate next round -
@@ -690,7 +721,7 @@ def staffing_dialog(agent_id: str, action: str) -> None:
                         f"PIVOT[{specialist_id}]: {reason} (no current candidate identified to exclude)"
                     )
         else:
-            entry = f"{timestamp} — PM chose to {action.lower()} {agent['name']} for Round {st.session_state.round_number + 1}. Reason: {reason}"
+            entry = f"{timestamp} — PM chose to {action.lower()} {agent['name']} for Round {next_round}. Reason: {reason}"
         st.session_state.memory.insert(0, entry)
         st.session_state.notice = f"{agent['name']} is marked {new_status} for the next research round. Decision saved to Memory."
         st.rerun()
@@ -874,7 +905,7 @@ def dashboard() -> None:
             agent = agents[agent_id]
             with col:
                 staffing_status = (
-                    st.session_state.staffing[agent_id]
+                    effective_staffing(snapshot)[agent_id]
                     if snapshot and workflow.get("status") == "Waiting for PM Decision"
                     else agent.get("staffing_status") if snapshot else st.session_state.staffing[agent_id]
                 )
@@ -896,11 +927,34 @@ def dashboard() -> None:
     left, right = st.columns([2, 1])
     with left:
         st.markdown("#### Recent Memory / Previous Lessons")
-        memory_entries = st.session_state.memory if not snapshot else [
-            f"Memory record: {snapshot.get('memory', {}).get('record_id') or 'N/A'}",
-            snapshot.get("memory", {}).get("context") or "No memory context exported for this run.",
-        ]
-        for entry in memory_entries[:3]:
+        if snapshot:
+            memory = snapshot.get("memory", {})
+            context = memory.get("context") or {}
+            lessons = list(snapshot.get("mandate", {}).get("prior_round_lessons") or [])
+            # The runner stores a generic receipt for every PM decision. It is
+            # useful for auditing, but repeating it in the PM-facing Memory
+            # panel adds no decision context. Show only distinct, actionable
+            # lessons here.
+            context_lessons = [
+                lesson for lesson in (context.get("lessons_for_next_round") or [])
+                if lesson != "PM decision recorded from the live dashboard."
+                and lesson not in lessons
+            ]
+            memory_entries = [
+                f"Previous decision record: {memory.get('record_id') or 'loaded for this round'}",
+                *[f"Next-round directive: {lesson}" for lesson in lessons],
+                *[f"Saved lesson: {lesson}" for lesson in context_lessons],
+            ]
+            if len(memory_entries) == 1:
+                memory_entries.append("No previous-round lessons have been recorded yet.")
+        else:
+            if st.session_state.data_source == "Current workflow":
+                memory_entries = [
+                    "Live Memory will be available after this research round reaches PM review."
+                ]
+            else:
+                memory_entries = st.session_state.memory
+        for entry in memory_entries[:5]:
             st.write(f"• {entry}")
     with right:
         st.markdown("#### PM Decision")
@@ -924,7 +978,7 @@ def agent_detail() -> None:
         snapshot and snapshot.get("workflow", {}).get("status") == "Waiting for PM Decision"
     )
     staffing_status = (
-        st.session_state.staffing[agent_id]
+        effective_staffing(snapshot)[agent_id]
         if awaiting_pm_decision
         else agent.get("staffing_status") if snapshot else st.session_state.staffing[agent_id]
     )
@@ -983,7 +1037,36 @@ def agent_detail() -> None:
         "These choices configure the next round only. Pivot excludes this agent's current "
         "candidate ticker and records your reason in the next-round mandate."
     )
-    staffing_status = st.session_state.staffing[agent_id]
+    if snapshot:
+        specialist_id = STAFFING_KEY_TO_SPECIALIST_ID[agent_id]
+        prior_pivot_applied = any(
+            str(lesson).startswith(f"PIVOT[{specialist_id}]:")
+            for lesson in snapshot.get("mandate", {}).get("prior_round_lessons", [])
+        )
+        if prior_pivot_applied:
+            st.info(
+                "A previous Pivot has already been applied to this completed round. "
+                "Any action below concerns the next round and this agent's current candidate."
+            )
+    selected_action = st.session_state.next_round_actions.get(agent_id)
+    if selected_action:
+        st.success(f"{selected_action} selected for this agent's next round.")
+        if st.button("Change next-round selection", key=f"change-{agent_id}"):
+            if selected_action == "Pivot":
+                specialist_id = STAFFING_KEY_TO_SPECIALIST_ID[agent_id]
+                st.session_state.pending_pivot_lessons = [
+                    lesson for lesson in st.session_state.pending_pivot_lessons
+                    if not lesson.startswith(f"PIVOT[{specialist_id}]:")
+                ]
+            st.session_state.next_round_actions.pop(agent_id, None)
+            # Restore the actual current-round status before presenting the
+            # alternatives. For example, a currently benched Quant Trader
+            # returns to a single Hire option, not Bench/Pivot.
+            if snapshot:
+                st.session_state.staffing[agent_id] = agent.get("staffing_status", "Active")
+            st.rerun()
+        return
+    staffing_status = effective_staffing(snapshot)[agent_id] if snapshot else st.session_state.staffing[agent_id]
     actions = ["Hire"] if staffing_status == "Benched" else ["Bench", "Pivot"]
     buttons = st.columns(len(actions))
     for col, action in zip(buttons, actions):
@@ -1095,6 +1178,9 @@ def report_page() -> None:
         )
 
         def _resume(decision_type: str, *, selected_candidate_id: str | None = None) -> None:
+            if decision_type == "request_another_round" and round_number >= MAX_RESEARCH_ROUNDS:
+                st.error(f"This pilot is limited to {MAX_RESEARCH_ROUNDS} research rounds. Select a strategy or reject this round.")
+                return
             rationale = st.session_state.get("pm_decision_rationale", "").strip() or (
                 "PM decision recorded from the live dashboard."
             )
@@ -1114,6 +1200,10 @@ def report_page() -> None:
             st.session_state.live_snapshot_ready = False
             st.session_state.phase = "running"
             st.session_state.round_number = round_number + 1 if decision_type == "request_another_round" else round_number
+            if decision_type == "request_another_round":
+                # Continuing research is a workflow-level action. Return to
+                # the dashboard so the PM can watch the next round progress.
+                st.session_state.view = "dashboard"
             st.session_state.notice = f"Resuming with decision: {decision_type.replace('_', ' ')}."
             st.rerun()
 
@@ -1138,8 +1228,14 @@ def report_page() -> None:
             _resume("select", selected_candidate_id=selected)
         if two.button("Reject", use_container_width=True):
             _resume("reject")
-        if three.button("Request Another Round", use_container_width=True):
+        if three.button(
+            "Request Another Round",
+            use_container_width=True,
+            disabled=round_number >= MAX_RESEARCH_ROUNDS,
+        ):
             _resume("request_another_round")
+        if round_number >= MAX_RESEARCH_ROUNDS:
+            st.caption(f"The {MAX_RESEARCH_ROUNDS}-round validation budget has been reached.")
         return
     if st.session_state.pm_decision:
         st.success(f"Decision recorded: {st.session_state.pm_decision}")
