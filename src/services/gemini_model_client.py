@@ -4,6 +4,11 @@ Reads GEMINI_API_KEY (and optionally MODEL_NAME) from the environment, so
 nothing about which provider is in use is hard-coded here beyond "this file
 happens to call Gemini." Any agent that accepts a `model_client` can use
 this without knowing it's Gemini underneath.
+
+Notes:
+- New GeminiModelClient implementing the ModelClient protocol,
+  loading credentials from .env via python-dotenv
+- Add google-genai and python-dotenv to pyproject.toml dependencies
 """
 
 from __future__ import annotations

@@ -4,6 +4,11 @@ Each test builds a real RiskReviewResponse (by running the real
 RiskAgentImpl against three clean candidate packages), then feeds the
 surviving candidates into ReportingAgentImpl.report() and asserts on the
 shape of the result.
+
+Wire GeminiModelClient into check_reporting_agent_impl.py to manually
+verify end-to-end memo generation through the real Risk -> Reporting
+chain (kept out of the pytest suite intentionally, since it makes a
+real paid API call)
 """
 
 from __future__ import annotations
