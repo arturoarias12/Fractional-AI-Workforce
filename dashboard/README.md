@@ -43,7 +43,13 @@ The local pilot runs this workflow:
   a PM-facing comparison, and a human PM decision.
 - While a PM decision is pending, the trader detail pages provide next-round
   Hire, Bench, and Pivot controls. A Pivot excludes the trader's current
-  candidate ticker and records its reason in the next-round mandate.
+  candidate ticker and records its reason in the next-round mandate. One
+  staffing choice is applied per trader per PM review; it can be changed before
+  the PM submits the decision.
+- When the PM requests another round, the workflow reloads its durable Memory,
+  returns the user to the Dashboard, and applies the selected staffing and
+  Pivot directives to the new round. The pilot is limited to three research
+  rounds, matching the Risk validation-touch budget.
 - The live form's horizon, risk profile, rebalancing preference, risk limits,
   constraints, and ticker-exclusion notes are translated into documented
   Fundamental/Quant directives; the applied directives are visible on the
