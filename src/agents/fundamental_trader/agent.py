@@ -48,10 +48,17 @@ from protocols import (
     TraderTask,
 )
 
+from mandate_directives import resolve_mandate_directives
+
 from .data_adapter import extract_fundamental_panel, extract_price_panel
 from .errors import MandateValidationError
 from .interpretation import build_interpretation
-from .rule_generator import ProposedCategoryDeviation, propose_category_deviations
+from .rule_generator import (
+    DEFAULT_ENTRY_ZSCORE,
+    DEFAULT_EXIT_ZSCORE,
+    ProposedCategoryDeviation,
+    propose_category_deviations,
+)
 from .services import BacktestEngine, DataService, ValidationSplitPolicy
 from .strategy import CATEGORY_DEVIATION_EXECUTOR_ID
 
@@ -164,11 +171,40 @@ class FundamentalTraderAgent:
             and mandate.permitted_asset_universe
             else None
         )
+
+        # Resolve non-universe mandate fields (risk_profile, investment_horizon,
+        # rebalancing_preference, risk_limits, leverage/short constraints,
+        # market_context, pm_notes, prior_round_lessons) into concrete
+        # parameters - see mandate_directives.py for exactly what each field
+        # does and why. Previously none of these had any effect.
+        directives = resolve_mandate_directives(
+            mandate,
+            agent_id=str(SpecialistId.FUNDAMENTAL_TRADER.value),
+            permitted_symbols=permitted_symbols,
+        )
+        if directives.constraint_violations:
+            violation_text = "; ".join(directives.constraint_violations)
+            return self._failed_package(
+                task,
+                stage="fundamental_trader.constraints",
+                message=violation_text,
+                retryable=False,
+                data_request=data_request,
+                data_response=data_response,
+                status=RunStatus.PARTIAL,
+                constraint_status=ConstraintCheckStatus.VIOLATION_IDENTIFIED,
+                constraint_violations=list(directives.constraint_violations),
+            )
+
         proposals = propose_category_deviations(
             train_panel,
             fundamental_panel,
             permitted_symbols=permitted_symbols,
+            excluded_tickers=directives.excluded_tickers,
             top_n=self._top_n_candidates,
+            entry_zscore=DEFAULT_ENTRY_ZSCORE * directives.entry_zscore_multiplier,
+            exit_zscore=DEFAULT_EXIT_ZSCORE * directives.exit_zscore_multiplier,
+            preferred_lookback_days=directives.preferred_lookback_days,
         )
         if not proposals:
             return self._failed_package(
@@ -199,7 +235,7 @@ class FundamentalTraderAgent:
                 constraint_violations=[violation],
             )
 
-        candidate_spec = self._build_candidate(task, best)
+        candidate_spec = self._build_candidate(task, best, directives.applied_notes)
         # Declare a buy-and-hold benchmark on the traded ticker itself now
         # that it's known - a same-terms baseline (identical period,
         # universe, cost assumptions) for Risk's CP-6 check to compare
@@ -279,6 +315,47 @@ class FundamentalTraderAgent:
                 ],
                 eligible_for_risk_review=False,
             )
+
+        if directives.max_drawdown_limit is not None:
+            observed_drawdown = backtest_result.metrics.get("max_drawdown")
+            if isinstance(observed_drawdown, (int, float)) and abs(observed_drawdown) > directives.max_drawdown_limit:
+                return TraderStrategyPackage(
+                    package_id=f"{task.lineage.task_id}.package",
+                    candidate_id=candidate_spec.candidate_id,
+                    trader_id=SpecialistId.FUNDAMENTAL_TRADER,
+                    lineage=task.lineage,
+                    mandate_reference=mandate.reference(),
+                    status=RunStatus.FAILED,
+                    hypothesis=self._hypothesis(best),
+                    data_request=data_request,
+                    data_usage=data_usage,
+                    specialty_evidence=self._evidence_payload(best),
+                    candidate_rule=candidate_spec,
+                    backtest_request=backtest_request,
+                    backtest_result=backtest_result,
+                    constraint_assessment=MandateConstraintAssessment(
+                        status=ConstraintCheckStatus.VIOLATION_IDENTIFIED,
+                        violations=[
+                            f"Observed max drawdown {observed_drawdown:.1%} breaches the "
+                            f"mandate's risk_limits.max_drawdown of {directives.max_drawdown_limit:.1%}."
+                        ],
+                        requires_risk_validation=False,
+                    ),
+                    failures=[
+                        TraderFailure(
+                            stage="fundamental_trader.risk_limits",
+                            message=(
+                                f"Candidate {best.ticker} breached the mandate's stated "
+                                f"max drawdown limit ({directives.max_drawdown_limit:.1%}); "
+                                "not proposed for Risk review this round. Only the top-ranked "
+                                "candidate is screened - a lower-ranked, compliant candidate "
+                                "is not automatically retried this round."
+                            ),
+                            retryable=False,
+                        )
+                    ],
+                    eligible_for_risk_review=False,
+                )
 
         interpretation = build_interpretation(best, backtest_result)
 
@@ -384,7 +461,10 @@ class FundamentalTraderAgent:
         return None
 
     def _build_candidate(
-        self, task: TraderTask, proposal: ProposedCategoryDeviation,
+        self,
+        task: TraderTask,
+        proposal: ProposedCategoryDeviation,
+        directive_notes: tuple[str, ...] = (),
     ) -> CandidateRuleSpecification:
         evidence_id = f"fundamental_trader.category_scan.{proposal.ticker}"
         draft = CandidateRuleDraft(
@@ -453,6 +533,7 @@ class FundamentalTraderAgent:
                 "ISSUER_SCALE_TIER (major vs. boutique fund family) "
                 "substitutes for expense ratio / dividend yield / NAV "
                 "premium-discount, which are not populated in this fixture.",
+                *directive_notes,
             ],
         )
         return CandidateRuleSpecification(

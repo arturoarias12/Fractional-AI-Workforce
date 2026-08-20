@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from evaluation.harness import HarnessReport, SuccessMetric, grade_workflow_state
+
 
 SNAPSHOT_SCHEMA_VERSION = "0.1.0"
 DEFAULT_SNAPSHOT_PATH = Path(__file__).parent / "data" / "workflow_snapshot.json"
@@ -68,6 +70,12 @@ def build_dashboard_snapshot(workflow_state: Mapping[str, Any]) -> dict[str, Any
     lifecycle = _mapping(state.get("agent_lifecycle"))
     active = {str(item) for item in _sequence(state.get("active_specialists"))}
     events = _sequence(state.get("operational_events"))
+    # Single source of truth for every non-time productivity metric - see
+    # src/evaluation/harness.py. Previously this module computed its own,
+    # separate metrics locally and left success_rate hardcoded to "N/A"
+    # unconditionally, duplicating (and disagreeing with) the harness's
+    # already-tested logic. Graded once per snapshot build, not per agent.
+    harness_report = grade_workflow_state(state, success_metric=SuccessMetric.EXECUTION)
 
     agents = {
         dashboard_id: _agent_snapshot(
@@ -76,7 +84,7 @@ def build_dashboard_snapshot(workflow_state: Mapping[str, Any]) -> dict[str, Any
             lifecycle=_mapping(lifecycle.get(definition["workflow_id"])),
             state=state,
             active=definition["workflow_id"] in active,
-            events=events,
+            harness_report=harness_report,
         )
         for dashboard_id, definition in AGENTS.items()
     }
@@ -93,7 +101,10 @@ def build_dashboard_snapshot(workflow_state: Mapping[str, Any]) -> dict[str, Any
         },
         "mandate": _mapping(state.get("pm_mandate")),
         "agents": agents,
-        "summary_metrics": _summary_metrics(agents),
+        "summary_metrics": {
+            **harness_report.summary_metrics(),
+            "active_agents": sum(agent["staffing_status"] == "Active" for agent in agents.values()),
+        },
         "risk_review": _mapping(state.get("risk_review_response")),
         "risk_failure": _mapping(state.get("risk_failure")),
         "reporting": _mapping(state.get("reporting_output")),
@@ -138,11 +149,11 @@ def _agent_snapshot(
     lifecycle: Mapping[str, Any],
     state: Mapping[str, Any],
     active: bool,
-    events: Sequence[Any],
+    harness_report: HarnessReport,
 ) -> dict[str, Any]:
     agent_id = definition["workflow_id"]
     package = _package_for_agent(dashboard_id, state)
-    metrics = _metrics_for_agent(agent_id, lifecycle, events)
+    metrics = _metrics_for_agent(agent_id, lifecycle, harness_report)
     lifecycle_state = str(lifecycle.get("current_state", ""))
 
     return {
@@ -188,31 +199,28 @@ def _package_summary(package: Mapping[str, Any]) -> str | None:
 
 
 def _metrics_for_agent(
-    agent_id: str, lifecycle: Mapping[str, Any], events: Sequence[Any]
+    agent_id: str, lifecycle: Mapping[str, Any], harness_report: HarnessReport,
 ) -> dict[str, Any]:
-    matching_events = [
-        _mapping(event) for event in events if _mapping(event).get("agent_id") == agent_id
-    ]
-    costs = [_number(event.get("reported_cost")) for event in matching_events]
-    retries = max(0, len(matching_events) - len({event.get("task_id") for event in matching_events if event.get("task_id")}))
-    failures = sum(event.get("event_type") in {"task_failed", "task_timed_out"} for event in matching_events)
+    productivity = harness_report.agents.get(agent_id)
+    if productivity is None:
+        # No operational_events were recorded for this agent at all (e.g. it
+        # was benched this round) - nothing measured, not zero.
+        return {
+            "task_completion_time": _duration(lifecycle.get("start_time"), lifecycle.get("end_time")),
+            "success_rate": "N/A",
+            "api_cost": "N/A",
+            "retry_count": "N/A",
+            "failed_count": "N/A",
+        }
 
-    return {
-        "task_completion_time": _duration(lifecycle.get("start_time"), lifecycle.get("end_time")),
-        "success_rate": "N/A",
-        "api_cost": round(sum(cost for cost in costs if cost is not None), 4) if any(costs) else "N/A",
-        "retry_count": retries if matching_events else "N/A",
-        "failed_count": failures if matching_events else "N/A",
-    }
-
-
-def _summary_metrics(agents: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
-    costs = [_number(agent["metrics"]["api_cost"]) for agent in agents.values()]
-    return {
-        "research_completion_time": "N/A",
-        "total_api_cost": round(sum(cost for cost in costs if cost is not None), 4) if any(costs) else "N/A",
-        "active_agents": sum(agent["staffing_status"] == "Active" for agent in agents.values()),
-    }
+    metrics = dict(productivity.as_dashboard_metrics(harness_report.success_metric))
+    if metrics["task_completion_time"] == "N/A":
+        # The harness only measures latency from timed events; fall back to
+        # the lifecycle's own start/end timestamps if those exist instead.
+        metrics["task_completion_time"] = _duration(
+            lifecycle.get("start_time"), lifecycle.get("end_time"),
+        )
+    return metrics
 
 
 def _workflow_status(state: Mapping[str, Any], agents: Mapping[str, Mapping[str, Any]]) -> str:
