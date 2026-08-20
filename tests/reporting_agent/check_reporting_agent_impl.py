@@ -24,6 +24,7 @@ from risk_fixtures import (
 from agents.risk_agent import RiskAgentImpl  # noqa: E402
 from agents.reporting_agent.reporting_agent_impl import ReportingAgentImpl  # noqa: E402
 from protocols.reporting import ReportingRequest  # noqa: E402
+from services.gemini_model_client import GeminiModelClient
 
 
 async def main() -> None:
@@ -56,7 +57,7 @@ async def main() -> None:
     )
 
     # 4. Actually run the Reporting Agent.
-    reporting_agent = ReportingAgentImpl()
+    reporting_agent = ReportingAgentImpl(model_client=GeminiModelClient())
     output = await reporting_agent.report(reporting_request)
 
     print("\n=== Reporting Agent output ===")

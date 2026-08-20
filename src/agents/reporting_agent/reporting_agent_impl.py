@@ -94,7 +94,7 @@ class ReportingAgentImpl(ReportingAgent):
     def _build_comparison(self, candidates, risk_response):
         comparison = {}
 
-        # TODO:
+        # Tasks:
         # 1. collect key information from each candidate
         # 2. attach relevant risk review information
         # 3. organize candidates into a common comparison structure
@@ -154,7 +154,7 @@ class ReportingAgentImpl(ReportingAgent):
 
     def _build_memo_prompt(self, candidates, comparison, risk_response):
 
-        # TODO: Build a PM-facing prompt for model_client
+        # Task: Build a PM-facing prompt for model_client
         # from the comparison and required risk disclosures
 
         lines = [MEMO_PROMPT_BUILDING_LINES]
@@ -200,7 +200,7 @@ class ReportingAgentImpl(ReportingAgent):
         return "\n".join(lines)
 
     async def _generate_memo(self, candidates, comparison, risk_response):
-        # TODO: Generate a PM-facing strategy memo
+        # Task: Generate a PM-facing strategy memo
 
         prompt = self._build_memo_prompt(candidates, comparison, risk_response)
 
@@ -213,7 +213,7 @@ class ReportingAgentImpl(ReportingAgent):
         context = ModelRequestContext(
             agent_id=self.agent_id,
             operation="strategy_memo_generation",
-            workflow_id=candidates[0].lineage.workflow.id,
+            workflow_id=candidates[0].lineage.workflow_id,
             task_id=risk_response.request_id,
         )
 
