@@ -147,7 +147,18 @@ def launch_live_resume(
         "active_specialists": _active_specialists_from_staffing()
     }
     if st.session_state.pending_pivot_lessons:
+        # Streamlit session state resets on a browser/server reload, while the
+        # graph snapshot persists. Rehydrate the original mandate from that
+        # snapshot before adding a pivot lesson; never replace a valid graph
+        # mandate with a partial {"prior_round_lessons": ...} payload.
         current_mandate = dict(st.session_state.pm_mandate or {})
+        if not current_mandate.get("workflow_id"):
+            current_mandate = dict((snapshot_data() or {}).get("mandate") or {})
+        if not current_mandate.get("workflow_id"):
+            raise OSError(
+                "The original PM mandate is unavailable. Refresh the live snapshot "
+                "before requesting another round."
+            )
         existing_lessons = list(current_mandate.get("prior_round_lessons") or [])
         current_mandate["prior_round_lessons"] = (
             existing_lessons + list(st.session_state.pending_pivot_lessons)
@@ -550,7 +561,7 @@ def workflow_input_for_demo() -> dict[str, Any] | None:
     """Create the exact top-level input shape expected by the graph."""
 
     mandate = st.session_state.pm_mandate
-    if not mandate:
+    if not mandate or not mandate.get("workflow_id"):
         return None
     return {
         "pm_mandate": mandate,
