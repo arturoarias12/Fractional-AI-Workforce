@@ -18,7 +18,7 @@ Two architectures were evaluated for how Technical, Fundamental, and Quant shoul
 
 | Agent | Lens / Job | Owner | Status |
 | --- | --- | --- | --- |
-| Technical Trader | Charts, volume, indicators (RSI, MACD, moving averages) | Arturo | Real when configured (OpenAI/Anthropic/Gemini adapters built); falls back to a labeled stub without credentials. Live-key smoke test still needed. |
+| Technical Trader | Charts, volume, indicators (RSI, MACD, moving averages) | Arturo | Real when configured (OpenAI/Anthropic/Gemini adapters built); falls back to a labeled stub without credentials. Live-key smoke test completed — see the Technical Trader methodology section for the verified result. |
 | Fundamental Trader | Fund-level fundamentals via ISSUER_SCALE_TIER heuristic (category-benchmark deviation) | Aditi | Built, tested, verified end-to-end |
 | Quant Trader | Statistical anomalies — cross-asset mean-reversion pairs | Shaurya | Built, verified end-to-end |
 | Risk / Skeptic Agent | 13-point cherry-picking checklist (CP-1–CP-13); can veto any candidate | Yutong | Built, verified against real candidates and a real 4-round run |
@@ -44,14 +44,14 @@ A round of dashboard testing surfaced three real gaps between what the system wa
 
 ## 7. Verification Discipline
 
-- 91 automated tests pass on `main`, including 20 covering the mandate-directive resolver and two full end-to-end proofs that a Pivot action and a risk-profile change each genuinely alter what a trader proposes — not just that the underlying resolver returns the right value in isolation.
+- 111 automated tests pass on `main` as of this writing (up from 91 at the time the mandate-directive fix first landed, as more agent and integration work merged in), including 20 covering the mandate-directive resolver and two full end-to-end proofs that a Pivot action and a risk-profile change each genuinely alter what a trader proposes — not just that the underlying resolver returns the right value in isolation.
 - A representative live run drove the real system through four consecutive rounds (23 operational events), and the Risk agent's deterministic checklist correctly vetoed both surviving candidates at round 4 on CP-11 (the validation-touch budget) — a genuine veto produced by real code reviewing real results, not a scripted demo outcome.
 - The dashboard was verified to launch cleanly from a completely fresh install, following its own README's setup instructions exactly, before any documentation claims were made about it.
 - Every fix in §6 was verified against the real, shared 120-ETF dataset through the actual compiled production graph — not a mock — and confirmed that both real traders still pass Risk's unmodified checklist afterward.
 
 ## 8. Known Limitations (honest, not hidden)
 
-- Technical Trader's live model call has not been smoke-tested with real credentials in this environment — the wiring is verified up to that point, the actual provider call is not.
+- Technical Trader's live model call has been smoke-tested with real credentials against a real OpenAI model — see its methodology section's verified result (43.44% vs. a 39.57% executable benchmark over a 504-session held-out window). That result came from a controlled, Technical-only harness, not the full five-agent production graph; a separate integration run confirmed the same runtime completes correctly inside the compiled production graph alongside Fundamental and Quant Trader, but that run did not independently re-verify the backtest performance figures above.
 - Five of the Risk agent's 13 checks (CP-1, CP-2, CP-4, CP-10, CP-12) require a round-audit and round-history reader that doesn't exist yet; they currently return a flag requiring human review rather than a computed verdict, and are honest about that rather than defaulting to pass.
 - A data-provenance regression was found and documented, not silently patched: the shared data source's point-in-time verification was relaxed at some point, and no current check catches that specific class of regression. This is flagged as a genuine open question for the team, not resolved unilaterally.
 - API cost is measured end-to-end in the metrics pipeline but has no live runtime source wired in yet, so it currently reports N/A rather than a number — stated as an absence, not printed as zero.

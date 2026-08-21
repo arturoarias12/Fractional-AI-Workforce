@@ -9,6 +9,29 @@ decision. Strategy evaluation uses the shared deterministic Backtest Engine.
 The project is an educational research prototype. It does not execute live
 trades, manage real capital, or provide investment advice.
 
+## Team
+
+| Name | Role |
+| --- | --- |
+| Aditi Bagwe | Product Strategy & System Design Lead — Fundamental Trader, integration, dashboard staffing/session-isolation, architecture documentation |
+| Arturo Arias | AI Systems Engineer — Technical Trader, live dashboard pilot |
+| Emma Peng | Reporting Agent, Memory Store, paper synthesis |
+| Shaurya Manhas | Quant Trader |
+| Wanyi Zheng | Dashboard development |
+| Yiran Li | Data & universe selection, shared Data service |
+| Yutong Liu | Risk Agent, evaluation harness, QA |
+
+## Project phase
+
+Core system complete and verified end-to-end: all five hireable agents,
+the full multi-round research loop, real Hire/Bench/Pivot staffing effects,
+persistent Memory, and real productivity metrics are built, tested, and
+merged. The full project paper (architecture, all six agent/system
+methodology sections, and results/risk analysis) is compiled at
+[`docs/paper/Fractional_AI_Workforce_Full_Paper.md`](docs/paper/Fractional_AI_Workforce_Full_Paper.md).
+Remaining work: a final demo recording and any last review pass ahead of
+submission.
+
 ## Requirements
 
 - Python 3.11 or newer;
