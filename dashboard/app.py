@@ -17,6 +17,18 @@ from uuid import uuid4
 
 import streamlit as st
 
+# Don't rely solely on the editable pip install (`-e .`) having made src/'s
+# packages (evaluation, agents, protocols, ...) importable at the top level -
+# that assumption held for local development and for
+# scripts/run_full_research_loop_demo.py (which already does this same
+# insertion defensively), but broke on Streamlit Community Cloud's build,
+# which processes requirements.txt differently than a local `pip install -e .`
+# and left this file's own local modules (workflow_adapter, data_bootstrap)
+# unable to find src/'s packages via a plain top-level import.
+_REPO_ROOT_FOR_IMPORTS = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_REPO_ROOT_FOR_IMPORTS / "src"))
+sys.path.insert(0, str(_REPO_ROOT_FOR_IMPORTS))
+
 from data_bootstrap import ensure_offline_data_present
 from workflow_adapter import load_dashboard_snapshot
 
