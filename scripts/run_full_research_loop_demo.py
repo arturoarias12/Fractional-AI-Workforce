@@ -184,15 +184,31 @@ def _require_offline_data() -> None:
 
 RUN_ID, WORKFLOW_ID, TASK_ID = derive_demo_identifiers()
 
-# Both persist to disk (not in-process only) because the dashboard launches
-# each round as a fresh subprocess: a paused PM-decision interrupt and any
-# recorded Memory must survive that process exiting. See
-# docs/fundamental_trader.md and this script's module docstring.
-CHECKPOINT_DB_PATH = REPO_ROOT / "dashboard" / "data" / "workflow_checkpoints.sqlite"
-TECHNICAL_DIAGNOSTICS_PATH = (
-    REPO_ROOT / "dashboard" / "data" / "technical_trader_diagnostics"
-)
-MEMORY_STORE_DIR = REPO_ROOT / "dashboard" / "data" / "memory"
+# Session-scoped, not fixed: multiple concurrent users (e.g. on a public
+# multi-user deployment) each get their own subdirectory keyed by
+# workflow_id, so a checkpoint DB, Memory store, diagnostics dir, or
+# dashboard snapshot from one user's run can never collide with another's.
+# Previously these were fixed paths shared by every caller - real, on a
+# public deployment: two visitors clicking "Start Research" at the same
+# time would have corrupted each other's runs. See _session_data_dir below
+# and this module's docstring.
+SESSIONS_ROOT = REPO_ROOT / "dashboard" / "data" / "sessions"
+
+
+def _session_data_dir(workflow_id: str) -> Path:
+    """Return (and create) one workflow's private data directory.
+
+    workflow_id is produced by our own mandate builder or supplied via
+    FULL_TEST_WORKFLOW_ID / the dashboard's session id, not arbitrary user
+    input, so a light sanitization pass is enough here - same approach as
+    FileBackedMemoryStore._path_for.
+    """
+    safe_name = "".join(
+        ch if ch.isalnum() or ch in "-_." else "_" for ch in workflow_id
+    )
+    path = SESSIONS_ROOT / safe_name
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -533,7 +549,9 @@ def _load_mandate_and_payload(mandate_path: Path | None) -> tuple[PMMandate, dic
     return mandate, payload
 
 
-def _build_nodes(memory_store: FileBackedMemoryStore) -> "ProductionNodeSet":
+def _build_nodes(
+    memory_store: FileBackedMemoryStore, technical_diagnostics_path: Path,
+) -> "ProductionNodeSet":
     """Build the ProductionNodeSet shared by both start and resume paths."""
 
     async def memory_read_node(state: Mapping[str, Any]) -> dict[str, Any]:
@@ -632,7 +650,7 @@ def _build_nodes(memory_store: FileBackedMemoryStore) -> "ProductionNodeSet":
             validation_split_policy=HorizonMatchedValidationSplitPolicy(),
             benchmark_symbol=TECHNICAL_TRADER_BENCHMARK_SYMBOL,
             diagnostics_sink=JsonFileTechnicalDiagnosticsSink(
-                TECHNICAL_DIAGNOSTICS_PATH
+                technical_diagnostics_path
             ),
             execution_policy=technical_execution_policy,
         )
@@ -761,21 +779,41 @@ async def main(
 
     _initialize_offline_data()
 
-    CHECKPOINT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    memory_store = FileBackedMemoryStore(MEMORY_STORE_DIR)
+    # Determine the session-scoped workflow_id *before* opening any
+    # per-session file (checkpoint DB, Memory store, diagnostics, snapshot)
+    # - this is what lets multiple concurrent dashboard users run real,
+    # independent workflows without colliding on a shared file.
+    mandate: PMMandate | None = None
+    payload: dict[str, Any] = {}
+    if resume:
+        if not run_id or not decision_path:
+            print("--resume requires both --run-id and --decision-json")
+            return
+        session_workflow_id = run_id
+    else:
+        mandate, payload = _load_mandate_and_payload(mandate_path)
+        session_workflow_id = mandate.workflow_id
 
-    async with AsyncSqliteSaver.from_conn_string(str(CHECKPOINT_DB_PATH)) as checkpointer:
-        nodes = _build_nodes(memory_store)
+    session_dir = _session_data_dir(session_workflow_id)
+    checkpoint_db_path = session_dir / "workflow_checkpoints.sqlite"
+    technical_diagnostics_path = session_dir / "technical_trader_diagnostics"
+    memory_store_dir = session_dir / "memory"
+    snapshot_path = session_dir / "workflow_snapshot.json"
+
+    memory_store = FileBackedMemoryStore(memory_store_dir)
+
+    async with AsyncSqliteSaver.from_conn_string(str(checkpoint_db_path)) as checkpointer:
+        nodes = _build_nodes(memory_store, technical_diagnostics_path)
         # Keep the workflow aligned with Risk's three-round validation-touch
         # budget. The PM can request another round through round two; round
         # three requires a select or reject decision.
         compiled = compile_production_workflow(nodes, checkpointer=checkpointer, max_rounds=3)
-        runner = WorkflowRunner(compiled_graph=compiled, snapshot_writer=write_dashboard_snapshot)
+        runner = WorkflowRunner(
+            compiled_graph=compiled,
+            snapshot_writer=lambda state: write_dashboard_snapshot(state, snapshot_path),
+        )
 
         if resume:
-            if not run_id or not decision_path:
-                print("--resume requires both --run-id and --decision-json")
-                return
             decision_payload = json.loads(decision_path.read_text(encoding="utf-8"))
             pm_decision = decision_payload.get("pm_decision", decision_payload)
             state_update = decision_payload.get("state_update")
@@ -785,7 +823,6 @@ async def main(
                 run_id, pm_decision, state_update=state_update,
             )
         else:
-            mandate, payload = _load_mandate_and_payload(mandate_path)
             workflow_input: dict[str, Any] = {
                 "pm_mandate": mandate.model_dump(mode="json"),
                 "run_id": mandate.workflow_id,
@@ -813,7 +850,7 @@ async def main(
             print()
             final_state = await runner.start_workflow(workflow_input, publish_progress=True)
 
-        print("Dashboard snapshot written to dashboard/data/workflow_snapshot.json")
+        print(f"Dashboard snapshot written to {snapshot_path}")
         _print_state_summary(final_state)
 
 
