@@ -124,5 +124,4 @@ python -m pip install -r dashboard/requirements.txt
 streamlit run dashboard/app.py
 ```
 
-More detailed component documentation is under `docs/` and
-`src/agents/technical_trader/docs/`.
+More detailed component documentation is under `docs/`.
