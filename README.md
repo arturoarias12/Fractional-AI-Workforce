@@ -15,7 +15,7 @@ trades, manage real capital, or provide investment advice.
 | --- | --- |
 | Aditi Bagwe | Product Strategy & System Design Lead — Fundamental Trader, integration, dashboard staffing/session-isolation, architecture documentation |
 | Arturo Arias | AI Systems Engineer — Technical Trader, live dashboard pilot |
-| Emma Peng | Reporting Agent, Memory Store, paper synthesis |
+| Emma Peng | Reporting Agent, Memory Store, final paper synthesis |
 | Shaurya Manhas | Quant Trader |
 | Wanyi Zheng | Dashboard development |
 | Yiran Li | Data & universe selection, shared Data service |
