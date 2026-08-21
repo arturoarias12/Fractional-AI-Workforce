@@ -520,6 +520,9 @@ def _load_mandate_and_payload(mandate_path: Path | None) -> tuple[PMMandate, dic
 
     payload = json.loads(mandate_path.read_text(encoding="utf-8"))
     raw_mandate = payload.get("pm_mandate", payload)
+    # The dashboard encodes "all available offline ETF data" as an empty list.
+    if not raw_mandate.get("permitted_asset_universe"):
+        raw_mandate = {**raw_mandate, "permitted_asset_universe": list(PANEL)}
     mandate = PMMandate.model_validate(raw_mandate)
     if mandate.as_of_date > OFFLINE_DATA_MAX_DATE:
         raise ValueError(
