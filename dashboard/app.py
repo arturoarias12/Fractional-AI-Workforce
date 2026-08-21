@@ -65,10 +65,7 @@ UNIVERSE_OPTIONS = {
 }
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-LIVE_INPUT_PATH = REPO_ROOT / "dashboard" / "data" / "latest_pm_mandate.json"
-LIVE_DECISION_PATH = REPO_ROOT / "dashboard" / "data" / "latest_pm_decision.json"
 LIVE_RUNNER_PATH = REPO_ROOT / "scripts" / "run_full_research_loop_demo.py"
-LIVE_LOG_PATH = REPO_ROOT / "dashboard" / "data" / "live_workflow.log"
 # Updated together with the offline workbook. This keeps the PM date truthful:
 # the current fixture's last observed trading date is 2026-06-29.
 OFFLINE_DATA_MAX_DATE = date(2026, 6, 29)
@@ -76,6 +73,60 @@ OFFLINE_DATA_MAX_DATE = date(2026, 6, 29)
 # PM controls aligned with that guard prevents a request that is guaranteed to
 # be vetoed only because it exceeds the research budget.
 MAX_RESEARCH_ROUNDS = 3
+
+
+def _sanitize_workflow_id(workflow_id: str) -> str:
+    """Match run_full_research_loop_demo.py's own sanitization exactly, so
+    both sides always agree on the same directory for the same run."""
+    return "".join(
+        ch if ch.isalnum() or ch in "-_." else "_" for ch in workflow_id
+    )
+
+
+def _session_dir_for(workflow_id: str) -> Path:
+    """One run's private data directory, keyed by its own workflow_id.
+
+    Every live-mode file this dashboard reads or writes is scoped under
+    this directory, and the same workflow_id is what the backend script
+    uses to build the identical directory (see _session_data_dir in
+    run_full_research_loop_demo.py) - so two people using this dashboard
+    at the same time, e.g. on a public deployment, each get their own
+    checkpoint DB, Memory store, and snapshot file instead of silently
+    overwriting each other's run. Previously these paths were fixed,
+    shared by every caller regardless of who was using the app. Keying off
+    the mandate's own workflow_id (already uniquely generated per "Create
+    Mandate" submission - see f"dashboard-demo-{uuid4().hex[:8]}" below)
+    rather than a separate browser-session id keeps the dashboard and the
+    script from ever disagreeing about which directory a run's files live in.
+    """
+    path = REPO_ROOT / "dashboard" / "data" / "sessions" / _sanitize_workflow_id(workflow_id)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _current_run_workflow_id() -> str | None:
+    """The workflow_id of the PM's current run, if one has been created yet."""
+    mandate = st.session_state.get("pm_mandate")
+    if mandate and mandate.get("workflow_id"):
+        return str(mandate["workflow_id"])
+    return None
+
+
+def _live_input_path(workflow_id: str) -> Path:
+    return _session_dir_for(workflow_id) / "latest_pm_mandate.json"
+
+
+def _live_decision_path(workflow_id: str) -> Path:
+    return _session_dir_for(workflow_id) / "latest_pm_decision.json"
+
+
+def _live_log_path(workflow_id: str) -> Path:
+    return _session_dir_for(workflow_id) / "live_workflow.log"
+
+
+def _live_snapshot_path(workflow_id: str) -> Path:
+    return _session_dir_for(workflow_id) / "workflow_snapshot.json"
+
 
 # Maps this dashboard's short staffing keys (make_agents' dict keys) to the
 # SpecialistId strings the backend graph's active_specialists check expects
@@ -107,7 +158,8 @@ def launch_live_research(mandate: dict[str, Any]) -> subprocess.Popen[str]:
     service, but the separation keeps this prototype visibly interactive.
     """
 
-    LIVE_INPUT_PATH.write_text(
+    workflow_id = str(mandate["workflow_id"])
+    _live_input_path(workflow_id).write_text(
         json.dumps(
             {
                 "pm_mandate": mandate,
@@ -119,9 +171,9 @@ def launch_live_research(mandate: dict[str, Any]) -> subprocess.Popen[str]:
     )
     venv_python = REPO_ROOT / ".venv" / "bin" / "python"
     python = str(venv_python if venv_python.exists() else Path(sys.executable))
-    with LIVE_LOG_PATH.open("w", encoding="utf-8") as log_file:
+    with _live_log_path(workflow_id).open("w", encoding="utf-8") as log_file:
         return subprocess.Popen(
-            [python, str(LIVE_RUNNER_PATH), "--mandate-json", str(LIVE_INPUT_PATH)],
+            [python, str(LIVE_RUNNER_PATH), "--mandate-json", str(_live_input_path(workflow_id))],
             cwd=REPO_ROOT,
             stdout=log_file,
             stderr=subprocess.STDOUT,
@@ -171,6 +223,7 @@ def launch_live_resume(
         st.session_state.pm_mandate = current_mandate
         st.session_state.pending_pivot_lessons = []
 
+    LIVE_DECISION_PATH = _live_decision_path(run_id)
     LIVE_DECISION_PATH.write_text(
         json.dumps(
             {
@@ -186,7 +239,7 @@ def launch_live_resume(
     st.session_state.next_round_actions = {}
     venv_python = REPO_ROOT / ".venv" / "bin" / "python"
     python = str(venv_python if venv_python.exists() else Path(sys.executable))
-    with LIVE_LOG_PATH.open("w", encoding="utf-8") as log_file:
+    with _live_log_path(run_id).open("w", encoding="utf-8") as log_file:
         return subprocess.Popen(
             [
                 python, str(LIVE_RUNNER_PATH),
@@ -219,8 +272,12 @@ def poll_live_research() -> tuple[str | None, str | None]:
     st.session_state.live_process = None
     if return_code == 0:
         st.session_state.live_snapshot_ready = True
+        workflow_id = _current_run_workflow_id()
         try:
-            status = load_dashboard_snapshot().get("workflow", {}).get("status")
+            status = (
+                load_dashboard_snapshot(_live_snapshot_path(workflow_id)).get("workflow", {}).get("status")
+                if workflow_id else None
+            )
         except (OSError, ValueError):
             status = None
         if status == "Waiting for PM Decision":
@@ -229,7 +286,11 @@ def poll_live_research() -> tuple[str | None, str | None]:
         st.session_state.phase = "completed"
         return "completed", "Live research completed. The dashboard now shows its exported workflow snapshot."
 
-    log_lines = LIVE_LOG_PATH.read_text(encoding="utf-8").strip().splitlines()
+    workflow_id = _current_run_workflow_id()
+    log_lines = (
+        _live_log_path(workflow_id).read_text(encoding="utf-8").strip().splitlines()
+        if workflow_id else []
+    )
     detail = log_lines[-1] if log_lines else "The live workflow ended without an error message."
     st.session_state.phase = "idle"
     return "failed", detail
@@ -369,8 +430,11 @@ def snapshot_data() -> dict[str, Any] | None:
     # workflow, rather than being visually mixed with the prior run's result.
     if st.session_state.pm_mandate and not st.session_state.live_snapshot_ready:
         return None
+    workflow_id = _current_run_workflow_id()
+    if not workflow_id:
+        return None
     try:
-        return load_dashboard_snapshot()
+        return load_dashboard_snapshot(_live_snapshot_path(workflow_id))
     except (OSError, ValueError) as error:
         st.warning(f"Could not load workflow snapshot: {error}")
         return None

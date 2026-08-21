@@ -21,8 +21,15 @@ build/
 dashboard/data/latest_pm_mandate.json
 dashboard/data/live_workflow.log
 
-# Local durable-interrupt checkpoints and recorded Memory - runtime state
-# for the live pilot, not source, and workflow_id-specific to one machine.
+# Superseded by dashboard/data/sessions/<workflow_id>/ below - these fixed
+# paths are no longer written to (each run now gets its own subdirectory,
+# so concurrent users don't collide), left ignored in case any local
+# working copy still has stale files at the old locations.
 dashboard/data/workflow_checkpoints.sqlite
 dashboard/data/memory/
 dashboard/data/technical_trader_diagnostics/
+
+# Per-run session data (one subdirectory per workflow_id): checkpoint DB,
+# Memory store, diagnostics, and exported snapshot. Runtime state, not
+# source - and workflow_id-specific to whoever ran it.
+dashboard/data/sessions/
