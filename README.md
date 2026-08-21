@@ -29,8 +29,6 @@ persistent Memory, and real productivity metrics are built, tested, and
 merged. The full project paper (architecture, all six agent/system
 methodology sections, and results/risk analysis) is compiled at
 [`docs/paper/Fractional_AI_Workforce_Full_Paper.md`](docs/paper/Fractional_AI_Workforce_Full_Paper.md).
-Remaining work: a final demo recording and any last review pass ahead of
-submission.
 
 ## Requirements
 
