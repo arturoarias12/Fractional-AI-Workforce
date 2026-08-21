@@ -549,6 +549,16 @@ def _build_nodes(memory_store: FileBackedMemoryStore) -> "ProductionNodeSet":
         pm_decision = PMDecision.model_validate(state["pm_decision"])
         reporting_output = state.get("reporting_output") or {}
         risk_response = state.get("risk_review_response") or {}
+        mandate_lessons = state.get("pm_mandate", {}).get("prior_round_lessons", [])
+        pivot_lessons = (
+            [str(lesson) for lesson in mandate_lessons]
+            if isinstance(mandate_lessons, list)
+            else []
+        )
+        lessons = list(dict.fromkeys(
+            ([pm_decision.rationale] if pm_decision.rationale else [])
+            + pivot_lessons
+        ))
         record = MemoryRecord(
             record_id=f"{state['workflow_id']}.round-{state.get('round_number', 1)}.record",
             workflow_id=str(state.get("workflow_id") or state["pm_mandate"]["workflow_id"]),
@@ -558,9 +568,7 @@ def _build_nodes(memory_store: FileBackedMemoryStore) -> "ProductionNodeSet":
                 str(c) for c in (risk_response.get("critiques") or [])
             ] if isinstance(risk_response.get("critiques"), list) else [],
             pm_decision=pm_decision,
-            lessons_for_future_rounds=(
-                [pm_decision.rationale] if pm_decision.rationale else []
-            ),
+            lessons_for_future_rounds=lessons,
         )
         record_id = await memory_store.record(record)
         return {"memory_record_id": record_id}
@@ -662,7 +670,22 @@ def _build_nodes(memory_store: FileBackedMemoryStore) -> "ProductionNodeSet":
 
     # --- Real Risk + Reporting ---
     risk_agent = RiskAgentImpl()
-    reporting = RecordingReportingNode(ReportingAgentImpl())
+    # Reporting can write a Gemini memo when the runner is launched in an
+    # environment that has Emma's GEMINI_API_KEY.  The deterministic
+    # comparison remains available without credentials, so classmates can
+    # still run the complete offline loop locally.
+    try:
+        from services.gemini_model_client import GeminiModelClient
+
+        reporting_agent = ReportingAgentImpl(model_client=GeminiModelClient())
+        print("Reporting Agent: Gemini memo generation enabled.")
+    except (ImportError, KeyError):
+        reporting_agent = ReportingAgentImpl()
+        print(
+            "Reporting Agent: structured comparison only. Set GEMINI_API_KEY "
+            "to enable the optional narrative memo."
+        )
+    reporting = RecordingReportingNode(reporting_agent)
 
     return ProductionNodeSet(
         memory_read=memory_read_node,
@@ -740,9 +763,10 @@ async def main(
 
     async with AsyncSqliteSaver.from_conn_string(str(CHECKPOINT_DB_PATH)) as checkpointer:
         nodes = _build_nodes(memory_store)
-        # max_rounds > 1 so "request another round" can actually loop back
-        # instead of being rejected by the graph's own round-limit check.
-        compiled = compile_production_workflow(nodes, checkpointer=checkpointer, max_rounds=5)
+        # Keep the workflow aligned with Risk's three-round validation-touch
+        # budget. The PM can request another round through round two; round
+        # three requires a select or reject decision.
+        compiled = compile_production_workflow(nodes, checkpointer=checkpointer, max_rounds=3)
         runner = WorkflowRunner(compiled_graph=compiled, snapshot_writer=write_dashboard_snapshot)
 
         if resume:

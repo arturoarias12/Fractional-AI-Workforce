@@ -47,6 +47,10 @@ full-demo = [
 fundamental-demo = [
     "openpyxl>=3.1,<4",
 ]
+reporting-models = [
+    "google-genai>=1,<2",
+    "python-dotenv>=1,<2",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -57,7 +57,8 @@ DEFAULT_ENTRY_ZSCORE_MULTIPLIER = 1.0
 DEFAULT_EXIT_ZSCORE_MULTIPLIER = 1.0
 
 _CONSERVATIVE_TERMS = ("conservative", "cautious", "low risk", "low-risk", "defensive")
-_AGGRESSIVE_TERMS = ("aggressive", "high risk", "high-risk", "opportunistic")
+_MODERATE_TERMS = ("moderate", "balanced", "medium risk", "medium-risk", "neutral")
+_AGGRESSIVE_TERMS = ("aggressive", "growth", "high risk", "high-risk", "opportunistic")
 
 _LOW_TURNOVER_TERMS = ("low turnover", "low-turnover", "infrequent", "buy and hold", "buy-and-hold")
 _HIGH_TURNOVER_TERMS = ("high turnover", "high-turnover", "frequent", "active trading")
@@ -110,6 +111,11 @@ def _resolve_risk_profile(risk_profile: Any) -> tuple[float, tuple[str, ...]]:
         return DEFAULT_ENTRY_ZSCORE_MULTIPLIER, ()
     if _contains_any(text, _CONSERVATIVE_TERMS):
         return 1.3, (f"risk_profile ({text!r}) read as conservative: entry threshold raised 1.3x.",)
+    if _contains_any(text, _MODERATE_TERMS):
+        return (
+            DEFAULT_ENTRY_ZSCORE_MULTIPLIER,
+            (f"risk_profile ({text!r}) read as moderate: baseline entry threshold retained.",),
+        )
     if _contains_any(text, _AGGRESSIVE_TERMS):
         return 0.75, (f"risk_profile ({text!r}) read as aggressive: entry threshold lowered 0.75x.",)
     return DEFAULT_ENTRY_ZSCORE_MULTIPLIER, (f"risk_profile ({text!r}) did not match a known term; no change applied.",)

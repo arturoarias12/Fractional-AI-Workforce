@@ -78,7 +78,7 @@ def planned_workflow() -> WorkflowBlueprint:
             PlannedEdge(PM_DECISION_NODE, MEMORY_WRITE_NODE),
             PlannedEdge(
                 MEMORY_WRITE_NODE,
-                PM_INTAKE_NODE,
+                MEMORY_READ_NODE,
                 condition="pm_requested_another_round",
             ),
         ),

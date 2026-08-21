@@ -190,7 +190,9 @@ def compile_production_workflow(
         _route_after_memory_write,
         {
             PostDecisionRoute.WRITE_MEMORY_AND_START_NEXT_ROUND: (
-                PM_INTAKE_NODE
+                # Re-read the durable record before the next PM intake so a
+                # decision from round N is available to round N+1.
+                MEMORY_READ_NODE
             ),
             PostDecisionRoute.WRITE_MEMORY_AND_FINISH: END,
         },
