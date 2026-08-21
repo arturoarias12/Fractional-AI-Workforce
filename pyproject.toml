@@ -16,6 +16,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+]
 langgraph = [
     "langgraph>=1.2,<2",
     "langgraph-checkpoint-sqlite>=2.0,<4",
@@ -27,6 +30,19 @@ quant-demo = [
 technical-models = [
     "openai>=2.15,<3",
     "anthropic>=0.100,<0.101",
+]
+gemini-models = [
+    "google-genai>=1.75,<2",
+    "python-dotenv>=1.0,<2",
+]
+full-demo = [
+    "langgraph>=1.2,<2",
+    "langgraph-checkpoint-sqlite>=2.0,<4",
+    "aiosqlite>=0.20,<1",
+    "openpyxl>=3.1,<4",
+    "openai>=2.15,<3",
+    "anthropic>=0.100,<0.101",
+    "python-dotenv>=1.0,<2",
 ]
 fundamental-demo = [
     "openpyxl>=3.1,<4",

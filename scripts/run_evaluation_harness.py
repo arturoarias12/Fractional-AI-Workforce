@@ -84,8 +84,8 @@ def render(report: HarnessReport) -> str:
             "  exec = share of tasks that ran without erroring.",
             "  risk = share of proposals Risk approved; N/A for agents that",
             "         propose nothing, and for a run that crashed before review.",
-            "  Cost reads N/A until a real ModelClient reports tokens. That is a",
-            "  missing measurement, not a free agent.",
+            "  Cost reads N/A until model usage reaches the shared event ledger",
+            "  and is priced centrally. That is missing data, not a free agent.",
             "",
         ]
     )

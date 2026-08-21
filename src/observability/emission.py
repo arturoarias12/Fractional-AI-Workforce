@@ -151,10 +151,10 @@ def model_call_event(
 ) -> dict[str, Any]:
     """Record one completed model call, with whatever the provider reported.
 
-    No repo component implements ``ModelClient`` yet, so nothing calls this in
-    the current pipeline and ``api_cost`` legitimately reads ``N/A``.  The
-    contract exists now so that wiring a real client later is a call site, not
-    a schema change -- and so the harness is already correct when it lands.
+    Technical model adapters implement ``ModelClient`` and return token usage,
+    but the current graph does not yet bridge those per-call records into this
+    shared event channel or attach centrally maintained prices. ``api_cost``
+    therefore legitimately remains ``N/A`` until that integration is made.
     """
 
     event = _base_event(

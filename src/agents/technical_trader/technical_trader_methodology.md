@@ -30,9 +30,9 @@ The first call translates the mandate into a data and research plan without sele
 
 ### Candidate construction
 
-After deterministic analysis of the complete permitted universe, the second call receives a bounded shortlist of eligible technical opportunities. By default, the top 20 unique ETFs are exposed for comparative reasoning while the complete universe report remains attached for audit. The model creates one multi-ETF portfolio and aims for ten unique holdings, but may select fewer when frozen training evidence does not support a positive technical hypothesis for ten. Such a hypothesis is a model-authored interpretation of submitted evidence, not a calibrated expected return or guarantee.
+After deterministic analysis of the permitted assets with sufficient pre-evaluation history and complete benchmark-calendar coverage, the second call receives a bounded shortlist of eligible technical opportunities. By default, the top 20 unique ETFs are exposed for comparative reasoning while the complete eligible-universe report remains attached for audit. The model creates one multi-ETF portfolio and aims for ten unique holdings, but may select fewer when frozen training evidence does not support a positive technical hypothesis for ten. Such a hypothesis is a model-authored interpretation of submitted evidence, not a calibrated expected return or guarantee.
 
-For each sleeve, the model chooses one eligible ETF, one registered strategy family, and the exact evidence identifiers required by that family. It may explain the setup and select only the bounded buffers allowed by the executor contract. It may not reproduce high-precision indicator values, transcribe support prices, estimate a neckline, select the held-out period, or manufacture performance.
+For each sleeve, the model chooses one prompt-local opportunity reference and explains why the setup fits the mandate. Deterministic code atomically expands that reference into the eligible ETF, registered strategy family, complete canonical evidence set, opportunity metadata, and bounded executor parameters before the unchanged shared proposal contract is validated. This makes an invalid symbol/strategy/evidence recombination unrepresentable and prevents prompt-local aliases from entering the final package. The model may not reproduce high-precision indicator values, transcribe support prices, estimate a neckline, select the held-out period, or manufacture performance.
 
 ### Independent technical review
 
@@ -110,7 +110,7 @@ The final TraderStrategyPackage contains workflow, task, attempt, trader, packag
 
 Only a complete, successfully analyzed, backtested, and interpreted package is eligible for Risk review. A stage failure settles as a structured partial or failed package instead of raising an unhandled exception through the full multi-agent workflow. Operational diagnostics are isolated from model-authored strategy text so an exception message cannot trigger analytical guardrails. The Technical branch therefore preserves partial evidence and failure details without invalidating unrelated branches.
 
-Model-call telemetry records the agent, operation, workflow, task, call, attempt, provider request ID, latency, token usage, model identity, status, and provider-reported cost when available. The complete Technical Trader deadline is 400 seconds. Model, data, specialist, and backtest operations remain separately bounded, and runtime composition validates that retry and timeout budgets fit within the surrounding deadline. Provider choice remains a configuration change, while the LangGraph node and downstream package contract remain stable.
+Each model adapter returns normalized usage telemetry, including the agent, operation, workflow, task, call, attempt, provider request ID, latency, token usage, model identity, status, and provider-reported cost when available. An injected metrics sink can retain those records. The current production graph does not yet bridge the Technical Trader's per-call usage into the shared operational-event ledger or apply centrally maintained model prices, so dashboard API cost may remain unavailable. The complete Technical Trader deadline is 600 seconds. Model, data, specialist, and backtest operations remain separately bounded, and runtime composition validates that retry and timeout budgets fit within the surrounding deadline. Provider choice remains a configuration change, while the LangGraph node and downstream package contract remain stable.
 
 ## 10. Prototype Verification and Representative Result
 
@@ -127,6 +127,8 @@ The complete Technical pipeline was validated locally without invoking the other
 | Transaction costs | $209.17 | $71.88 |
 
 The Technical portfolio exceeded the executable benchmark by 3.87 percentage points in this one held-out path while exhibiting lower drawdown and volatility. The run completed in approximately 114 seconds and used 191,263 provider-reported tokens across four calls: 179,878 input tokens and 11,385 output tokens. The provider did not return a monetary cost. This result verifies the pipeline, point-in-time boundary, evidence enforcement, and like-for-like execution. It does not establish persistent alpha or forecast future performance.
+
+Separately, the same Technical runtime completed inside the repository's compiled production LangGraph alongside the current Fundamental and Quant Traders. All three trader packages reached Risk review, Reporting completed, and the graph paused at the durable human Portfolio Manager decision as designed. This integration result verifies the shared package and workflow boundaries; it does not replace the controlled Technical-only result above or constitute additional evidence of investment performance.
 
 ## 11. Risk Interpretation, Limitations, and Appropriate Claims
 

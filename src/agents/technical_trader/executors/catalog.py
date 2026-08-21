@@ -50,8 +50,15 @@ class TechnicalExecutorSpec:
     strategy_family: str
     description: str
     evidence_requirements: tuple[EvidenceKind, ...]
-    parameters: tuple[str, ...]
+    model_authored_parameters: tuple[str, ...]
+    code_owned_parameters: tuple[str, ...]
     supports_short: bool = False
+
+    @property
+    def parameters(self) -> tuple[str, ...]:
+        """Return the complete runtime contract for compatibility callers."""
+
+        return self.model_authored_parameters + self.code_owned_parameters
 
 
 _RISK_PARAMETERS = (
@@ -73,7 +80,8 @@ TECHNICAL_EXECUTOR_SPECS: tuple[TechnicalExecutorSpec, ...] = (
             "it under the configured benchmark-selection policy."
         ),
         evidence_requirements=("technical_report",),
-        parameters=("symbol", "target_weight"),
+        model_authored_parameters=(),
+        code_owned_parameters=("symbol", "target_weight"),
     ),
     TechnicalExecutorSpec(
         executor_id=MULTI_ASSET_PORTFOLIO_EXECUTOR_ID,
@@ -85,15 +93,17 @@ TECHNICAL_EXECUTOR_SPECS: tuple[TechnicalExecutorSpec, ...] = (
             "evidence-derived numeric parameters from those IDs."
         ),
         evidence_requirements=("per_sleeve_family_evidence",),
-        parameters=(
+        model_authored_parameters=(
+            "portfolio_target_gross_weight",
+            "omission_rationale",
+            "sleeves",
+        ),
+        code_owned_parameters=(
             "target_asset_count",
             "selected_asset_count",
-            "portfolio_target_gross_weight",
             "allocation_method",
             "selection_threshold",
-            "omission_rationale",
             "common_risk_parameters",
-            "sleeves",
         ),
     ),
     TechnicalExecutorSpec(
@@ -104,7 +114,12 @@ TECHNICAL_EXECUTOR_SPECS: tuple[TechnicalExecutorSpec, ...] = (
             "is recalculated from past bars at the horizon review cadence."
         ),
         evidence_requirements=("support",),
-        parameters=(
+        model_authored_parameters=(
+            "entry_buffer_percent",
+            "support_entry_floor_buffer_percent",
+            "technical_invalidation_buffer_percent",
+        ),
+        code_owned_parameters=(
             *_RISK_PARAMETERS,
             "review_interval_bars",
             "rolling_level_lookback_bars",
@@ -112,9 +127,6 @@ TECHNICAL_EXECUTOR_SPECS: tuple[TechnicalExecutorSpec, ...] = (
             "merge_tolerance_percent",
             "min_touches",
             "maximum_level_distance_percent",
-            "entry_buffer_percent",
-            "support_entry_floor_buffer_percent",
-            "technical_invalidation_buffer_percent",
         ),
     ),
     TechnicalExecutorSpec(
@@ -125,7 +137,11 @@ TECHNICAL_EXECUTOR_SPECS: tuple[TechnicalExecutorSpec, ...] = (
             "recalculated from past bars at the horizon review cadence."
         ),
         evidence_requirements=("resistance",),
-        parameters=(
+        model_authored_parameters=(
+            "entry_buffer_percent",
+            "technical_invalidation_buffer_percent",
+        ),
+        code_owned_parameters=(
             *_RISK_PARAMETERS,
             "review_interval_bars",
             "rolling_level_lookback_bars",
@@ -133,8 +149,6 @@ TECHNICAL_EXECUTOR_SPECS: tuple[TechnicalExecutorSpec, ...] = (
             "merge_tolerance_percent",
             "min_touches",
             "maximum_level_distance_percent",
-            "entry_buffer_percent",
-            "technical_invalidation_buffer_percent",
         ),
     ),
     TechnicalExecutorSpec(
@@ -147,7 +161,8 @@ TECHNICAL_EXECUTOR_SPECS: tuple[TechnicalExecutorSpec, ...] = (
             "crossover after the evaluation boundary."
         ),
         evidence_requirements=("moving_average",),
-        parameters=(
+        model_authored_parameters=(),
+        code_owned_parameters=(
             *_RISK_PARAMETERS,
             "fast_window",
             "slow_window",
@@ -162,7 +177,12 @@ TECHNICAL_EXECUTOR_SPECS: tuple[TechnicalExecutorSpec, ...] = (
             "volume to exceed its prior average by the configured multiple."
         ),
         evidence_requirements=("resistance", "volume"),
-        parameters=(
+        model_authored_parameters=(
+            "entry_buffer_percent",
+            "technical_invalidation_buffer_percent",
+            "minimum_relative_volume",
+        ),
+        code_owned_parameters=(
             *_RISK_PARAMETERS,
             "review_interval_bars",
             "rolling_level_lookback_bars",
@@ -170,10 +190,7 @@ TECHNICAL_EXECUTOR_SPECS: tuple[TechnicalExecutorSpec, ...] = (
             "merge_tolerance_percent",
             "min_touches",
             "maximum_level_distance_percent",
-            "entry_buffer_percent",
-            "technical_invalidation_buffer_percent",
             "volume_lookback_bars",
-            "minimum_relative_volume",
         ),
     ),
     TechnicalExecutorSpec(
@@ -184,12 +201,14 @@ TECHNICAL_EXECUTOR_SPECS: tuple[TechnicalExecutorSpec, ...] = (
             "entry-floor and technical-invalidation buffers."
         ),
         evidence_requirements=("support",),
-        parameters=(
-            *_RISK_PARAMETERS,
-            "anchor_level",
+        model_authored_parameters=(
             "entry_buffer_percent",
             "support_entry_floor_buffer_percent",
             "technical_invalidation_buffer_percent",
+        ),
+        code_owned_parameters=(
+            *_RISK_PARAMETERS,
+            "anchor_level",
         ),
     ),
     TechnicalExecutorSpec(
@@ -200,11 +219,13 @@ TECHNICAL_EXECUTOR_SPECS: tuple[TechnicalExecutorSpec, ...] = (
             "with re-arming only after price returns below the threshold."
         ),
         evidence_requirements=("resistance",),
-        parameters=(
-            *_RISK_PARAMETERS,
-            "anchor_level",
+        model_authored_parameters=(
             "entry_buffer_percent",
             "technical_invalidation_buffer_percent",
+        ),
+        code_owned_parameters=(
+            *_RISK_PARAMETERS,
+            "anchor_level",
         ),
     ),
     TechnicalExecutorSpec(
@@ -215,7 +236,8 @@ TECHNICAL_EXECUTOR_SPECS: tuple[TechnicalExecutorSpec, ...] = (
             "a bearish crossover or slow-average loss as technical exit."
         ),
         evidence_requirements=("moving_average",),
-        parameters=(*_RISK_PARAMETERS, "fast_window", "slow_window"),
+        model_authored_parameters=(),
+        code_owned_parameters=(*_RISK_PARAMETERS, "fast_window", "slow_window"),
     ),
     TechnicalExecutorSpec(
         executor_id=VOLUME_BREAKOUT_EXECUTOR_ID,
@@ -225,13 +247,15 @@ TECHNICAL_EXECUTOR_SPECS: tuple[TechnicalExecutorSpec, ...] = (
             "volume to exceed a multiple of prior average volume."
         ),
         evidence_requirements=("resistance", "volume"),
-        parameters=(
-            *_RISK_PARAMETERS,
-            "anchor_level",
+        model_authored_parameters=(
             "entry_buffer_percent",
             "technical_invalidation_buffer_percent",
-            "volume_lookback_bars",
             "minimum_relative_volume",
+        ),
+        code_owned_parameters=(
+            *_RISK_PARAMETERS,
+            "anchor_level",
+            "volume_lookback_bars",
         ),
     ),
     TechnicalExecutorSpec(
@@ -242,11 +266,13 @@ TECHNICAL_EXECUTOR_SPECS: tuple[TechnicalExecutorSpec, ...] = (
             "inverse-head-and-shoulders observation."
         ),
         evidence_requirements=("inverse_head_and_shoulders",),
-        parameters=(
-            *_RISK_PARAMETERS,
-            "neckline_price",
+        model_authored_parameters=(
             "breakout_buffer_percent",
             "technical_invalidation_buffer_percent",
+        ),
+        code_owned_parameters=(
+            *_RISK_PARAMETERS,
+            "neckline_price",
         ),
     ),
     TechnicalExecutorSpec(
@@ -258,11 +284,13 @@ TECHNICAL_EXECUTOR_SPECS: tuple[TechnicalExecutorSpec, ...] = (
             "Backtest Plan explicitly permit shorting."
         ),
         evidence_requirements=("head_and_shoulders",),
-        parameters=(
-            *_RISK_PARAMETERS,
-            "neckline_price",
+        model_authored_parameters=(
             "breakout_buffer_percent",
             "technical_invalidation_buffer_percent",
+        ),
+        code_owned_parameters=(
+            *_RISK_PARAMETERS,
+            "neckline_price",
         ),
         supports_short=True,
     ),
@@ -289,7 +317,18 @@ def render_executor_catalog(executor_ids: tuple[str, ...]) -> str:
                     f"  Behavior: {spec.description}",
                     "  Required evidence: "
                     + ", ".join(spec.evidence_requirements),
-                    "  Required parameters: " + ", ".join(spec.parameters),
+                    "  Model-authored parameters: "
+                    + (
+                        ", ".join(spec.model_authored_parameters)
+                        if spec.model_authored_parameters
+                        else "none"
+                    ),
+                    "  Code-owned parameters (do not author): "
+                    + (
+                        ", ".join(spec.code_owned_parameters)
+                        if spec.code_owned_parameters
+                        else "none"
+                    ),
                 ]
             )
         )

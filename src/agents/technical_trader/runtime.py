@@ -24,6 +24,7 @@ from protocols import (
 
 from .agents import TechnicalTraderAgent
 from .benchmark import BenchmarkSelectionPolicy
+from .diagnostics import TechnicalDiagnosticsSink
 from .errors import MandateValidationError
 from .execution import ExecutionPolicy
 from .model_client import MetricsSink, ModelClient
@@ -176,6 +177,7 @@ def create_technical_trader_runtime(
     candidate_prompt_max_assets: int = DEFAULT_CANDIDATE_PROMPT_ASSETS,
     benchmark_selection_policy: BenchmarkSelectionPolicy | None = None,
     metrics_sink: MetricsSink | None = None,
+    diagnostics_sink: TechnicalDiagnosticsSink | None = None,
     execution_policy: ExecutionPolicy | None = None,
 ) -> TechnicalTraderRuntime:
     policy = execution_policy or ExecutionPolicy()
@@ -193,6 +195,7 @@ def create_technical_trader_runtime(
             candidate_prompt_max_assets=candidate_prompt_max_assets,
             benchmark_selection_policy=benchmark_selection_policy,
             metrics_sink=metrics_sink,
+            diagnostics_sink=diagnostics_sink,
             execution_policy=policy,
         ),
         execution_policy=policy,

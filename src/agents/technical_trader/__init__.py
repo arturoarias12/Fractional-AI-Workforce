@@ -11,6 +11,13 @@ from .adapters import (
     create_technical_model_client_from_env,
 )
 from .benchmark import BenchmarkComparison, BenchmarkSelectionPolicy
+from .diagnostics import (
+    InMemoryTechnicalDiagnosticsSink,
+    JsonFileTechnicalDiagnosticsSink,
+    NullTechnicalDiagnosticsSink,
+    TechnicalCandidateDiagnostic,
+    TechnicalDiagnosticsSink,
+)
 from .errors import (
     AgentInputValidationError,
     AgentOutputValidationError,
@@ -21,6 +28,7 @@ from .errors import (
     ServiceContractError,
     TechnicalAnalysisInputError,
     TechnicalTraderError,
+    StructuredOutputValidationError,
 )
 from .execution import (
     DEFAULT_BACKTEST_TIMEOUT_SECONDS,
@@ -112,6 +120,7 @@ __all__ = [
     "HEAD_PATTERN_EXECUTOR_ID",
     "HORIZON_ADAPTIVE_TREND_EXECUTOR_ID",
     "HorizonEvaluationWindow",
+    "InMemoryTechnicalDiagnosticsSink",
     "INVERSE_PATTERN_EXECUTOR_ID",
     "InMemoryMetricsSink",
     "MAX_TIMEOUT_SECONDS",
@@ -119,6 +128,7 @@ __all__ = [
     "MAX_CANDIDATE_PROMPT_ASSETS",
     "MIN_CANDIDATE_PROMPT_ASSETS",
     "LONG_ONLY_TECHNICAL_EXECUTORS",
+    "JsonFileTechnicalDiagnosticsSink",
     "MOVING_AVERAGE_TREND_EXECUTOR_ID",
     "MULTI_ASSET_PORTFOLIO_EXECUTOR_ID",
     "MandateValidationError",
@@ -132,6 +142,7 @@ __all__ = [
     "ModelTimeoutError",
     "ModelUsage",
     "NullMetricsSink",
+    "NullTechnicalDiagnosticsSink",
     "OpenAIOutputMode",
     "OpenAITechnicalModelClient",
     "RESISTANCE_BREAKOUT_EXECUTOR_ID",
@@ -140,6 +151,7 @@ __all__ = [
     "ROLLING_VOLUME_BREAKOUT_EXECUTOR_ID",
     "ServiceContractError",
     "StagedTraderAgent",
+    "StructuredOutputValidationError",
     "SUPPORT_REACTION_EXECUTOR_ID",
     "TECHNICAL_EXECUTOR_SPECS",
     "TECHNICAL_STRATEGY_EXECUTORS",
@@ -147,6 +159,8 @@ __all__ = [
     "TechnicalAnalysisInputAdapter",
     "TechnicalAnalysisInputError",
     "TechnicalAnalysisToolkit",
+    "TechnicalCandidateDiagnostic",
+    "TechnicalDiagnosticsSink",
     "TechnicalModelConfigurationError",
     "TechnicalModelProvider",
     "TechnicalTraderAgent",

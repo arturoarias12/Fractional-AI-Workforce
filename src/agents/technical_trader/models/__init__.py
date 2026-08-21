@@ -41,6 +41,16 @@ from protocols import (
 )
 
 from .hireability import technical_trader_agent_card
+from .opportunity_selection import (
+    OpportunityCandidateProposalDraft,
+    OpportunityCandidateRuleDraft,
+    OpportunityPortfolioSelectionDraft,
+    OpportunitySleeveParametersDraft,
+    OpportunitySleeveSelectionDraft,
+    TARGET_TECHNICAL_SLEEVES,
+    TechnicalBacktestPlanSelectionDraft,
+    TechnicalTransactionCostAssumptionsDraft,
+)
 from .technical_analysis import (
     AssetTechnicalAnalysis,
     ChartPatternConfig,
@@ -88,6 +98,11 @@ __all__ = [
     "MovingAverageCrossDirection",
     "MovingAverageObservation",
     "MovingAverageRelationship",
+    "OpportunityCandidateProposalDraft",
+    "OpportunityCandidateRuleDraft",
+    "OpportunityPortfolioSelectionDraft",
+    "OpportunitySleeveParametersDraft",
+    "OpportunitySleeveSelectionDraft",
     "ConfidenceAssessment",
     "ConfidenceLevel",
     "ConstraintCheckStatus",
@@ -113,9 +128,12 @@ __all__ = [
     "SupportResistanceConfig",
     "SupportResistanceLevel",
     "TaskLineage",
+    "TARGET_TECHNICAL_SLEEVES",
     "TechnicalAnalysisReport",
+    "TechnicalBacktestPlanSelectionDraft",
     "TechnicalHorizonContext",
     "TechnicalOpportunity",
+    "TechnicalTransactionCostAssumptionsDraft",
     "VolumeAnalysisConfig",
     "VolumeObservation",
     "TraderFailure",

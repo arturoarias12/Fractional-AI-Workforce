@@ -1,7 +1,10 @@
 # Integration Guide
 
-The Technical Trader cannot run end to end until its real adapters, registered
-executor set, and shared validation policy are supplied.
+The Technical Trader is wired for end-to-end use with either OpenAI or
+Anthropic. Production composition must supply the shared Data Service,
+Backtest Engine, registered executor set, and validation policy described
+below; the repository's full-loop demo supplies local implementations for
+integration testing.
 
 Cross-component contracts are defined once in `src/protocols`. Agent-local
 models contain only technical-analysis evidence.
@@ -31,6 +34,11 @@ Install the optional provider SDKs without affecting the base installation:
 ```bash
 pip install -e ".[technical-models]"
 ```
+
+For the complete repository demo, `pip install -e ".[full-demo]"` installs the
+provider SDKs together with LangGraph, SQLite checkpointing, workbook support,
+and `.env` loading. Copy the root `.env.example` to `.env`; that local file is
+ignored by Git.
 
 Provider selection is explicit and occurs only at the composition root. No API
 key is read when the package is imported.
@@ -76,31 +84,54 @@ runtime = create_technical_trader_runtime(
 )
 ```
 
-`benchmark_symbol` is optional at the Python boundary for backward
-compatibility, but production composition should inject the PM-approved shared
-benchmark. If it is omitted, the model must declare a permitted benchmark and
-the run fails closed if it does not. Code always replaces model-authored dates
-with the exact horizon-matched dates returned by the shared validation policy.
+`benchmark_symbol` is a required construction dependency. Production
+composition must inject the PM-approved shared benchmark. The closed Technical
+model schema does not let the model
+choose a benchmark, dates, frequency, metrics, or validation policy. Code binds
+those fields from shared configuration and fails closed when no executable
+benchmark calendar is available.
+The full research-loop demo injects `HorizonMatchedValidationSplitPolicy` for
+the Technical branch. It selects the final exact number of available market
+sessions implied by the PM horizon; an absent or unparseable horizon uses the
+Technical Trader's disclosed 63-session default. Day, week, month, year, and
+explicit trading-session horizons therefore use the same runtime path.
 
 Deterministic analysis continues to cover the full PM universe. By default,
 the candidate and review prompts receive the 20 highest-ranked unique ETFs and
 all horizon-eligible evidence for those symbols. The full report remains in the
 final package. `candidate_prompt_max_assets` can be set from 10 through 120 at
-runtime without changing either provider adapter. Code rejects a model proposal
-that cites a symbol, evidence ID, or opportunity combination outside the exact
-shortlist submitted to that call.
+runtime without changing either provider adapter. Each eligible deterministic
+opportunity is exposed to the model through a short, prompt-local `O###`
+reference. The model selects references; Technical-owned code atomically binds
+each reference to its canonical symbol, child executor, complete evidence set,
+rank, score, and opportunity identity before the unchanged shared proposal
+contract is validated. An invalid recombination is therefore unrepresentable,
+and no `O###` reference is allowed to escape into the final package.
+
+Rejected provider payloads can optionally be sent to an injected
+`TechnicalDiagnosticsSink`. The full-loop demo uses the local JSON sink under
+`dashboard/data/technical_trader_diagnostics/`; those artifacts are ignored by
+Git and remain separate from `TraderStrategyPackage`, Risk, and Reporting.
+Parsed JSON is preserved on validation failure, while provider clients,
+credentials, environment variables, and request headers are never serialized.
 
 Common optional settings are:
 
 - `TECHNICAL_TRADER_MAX_OUTPUT_TOKENS` (default `12000`);
-- `TECHNICAL_TRADER_PROVIDER_TIMEOUT_SECONDS` (default `18`); and
-- `TECHNICAL_TRADER_PROVIDER_MAX_RETRIES` (default `1`, maximum `3`).
+- `TECHNICAL_TRADER_PROVIDER_TIMEOUT_SECONDS` (default `90`); and
+- `TECHNICAL_TRADER_PROVIDER_MAX_RETRIES` (default `0`, maximum `3`).
 
 OpenAI additionally accepts
 `TECHNICAL_TRADER_OPENAI_REASONING_EFFORT` and
 `TECHNICAL_TRADER_OPENAI_OUTPUT_MODE=json_schema|json_object`. Native JSON
 Schema is the default; `json_object` retains local Pydantic validation for a
 model/schema combination that cannot use native schema output.
+
+OpenAI native JSON Schema uses strict mode. Technical-local proposal models
+expose only model-owned family buffers, portfolio gross weight, omission
+rationale, sleeve references, and closed transaction-cost assumptions. Code-
+owned portfolio bookkeeping, horizon risk values, evaluation dates, and
+canonical evidence identities cannot be authored through that schema.
 
 Anthropic uses native structured outputs by default. The selected Claude model
 must support that feature. Set
@@ -159,8 +190,11 @@ Data Service integration details to confirm:
 - maximum payload size; and
 - provenance semantics.
 
-The agent deterministically resolves the PM's investment horizon after the
-training-only report is built. It supports horizon-compatible moving-average
+The agent deterministically resolves the PM's investment horizon and held-out
+window before building the training-only report. The benchmark defines the
+evaluation calendar; candidate assets must cover that calendar, and their
+Technical evidence is truncated strictly before its first session. It supports
+horizon-compatible moving-average
 pairs from 3/10 through 50/200, requires at least 252 training observations for
 the opportunity screen, and records unavailable assets instead of fabricating
 short histories. This is an agent-local interpretation of the PM mandate; it

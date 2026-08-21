@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from protocols import SpecialistId
 
 from ..benchmark import BenchmarkSelectionPolicy
+from ..diagnostics import TechnicalDiagnosticsSink
 from ..execution import ExecutionPolicy
 from ..model_client import MetricsSink, ModelClient
 from ..prompts import (
@@ -39,6 +40,7 @@ class TechnicalTraderAgent(StagedTraderAgent):
         candidate_prompt_max_assets: int = DEFAULT_CANDIDATE_PROMPT_ASSETS,
         benchmark_selection_policy: BenchmarkSelectionPolicy | None = None,
         metrics_sink: MetricsSink | None = None,
+        diagnostics_sink: TechnicalDiagnosticsSink | None = None,
         execution_policy: ExecutionPolicy | None = None,
     ) -> None:
         super().__init__(
@@ -64,6 +66,7 @@ class TechnicalTraderAgent(StagedTraderAgent):
             candidate_prompt_max_assets=candidate_prompt_max_assets,
             benchmark_selection_policy=benchmark_selection_policy,
             metrics_sink=metrics_sink,
+            diagnostics_sink=diagnostics_sink,
             execution_policy=execution_policy,
         )
 

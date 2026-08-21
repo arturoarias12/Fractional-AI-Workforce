@@ -55,6 +55,7 @@ from .strategies import (
     rolling_support_reaction_executor,
     rolling_volume_confirmed_breakout_executor,
     support_reaction_executor,
+    validate_technical_portfolio_parameters,
     volume_confirmed_breakout_executor,
 )
 
@@ -111,5 +112,6 @@ __all__ = [
     "rolling_support_reaction_executor",
     "rolling_volume_confirmed_breakout_executor",
     "support_reaction_executor",
+    "validate_technical_portfolio_parameters",
     "volume_confirmed_breakout_executor",
 ]

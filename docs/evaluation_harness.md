@@ -65,10 +65,11 @@ No metric is defaulted to zero. An agent that made no model calls has an
 **unknown** cost, not a cost of nothing, and the difference matters when the
 number sits under a fire button. Concretely:
 
-- `api_cost` reads `N/A` for every agent today, because no concrete
-  `ModelClient` exists in the repo yet. `model_call_event()` is defined and
-  tested so that wiring a real client later is a call site, not a schema
-  change.
+- `api_cost` reads `N/A` until provider usage is emitted into the shared
+  operational-event channel and priced by a centrally maintained model-price
+  table. Technical model adapters already return token usage, while
+  `model_call_event()` provides the provider-neutral graph record needed for
+  the remaining integration.
 - A benched agent has no success rate — not 0%.
 - A trader that **crashed** has no risk-approval rate. Its failed package still
   carries a `candidate_id`, but Risk never reviewed it, so counting it as a

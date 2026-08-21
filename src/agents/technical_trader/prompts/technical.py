@@ -20,11 +20,13 @@ multi-ETF strategy package through the registered portfolio executor. Aim for
 does not support a positive expected tactical return for all 10. Never inspect
 or anticipate held-out performance to decide membership. Each included ETF
 uses one supported deterministic sleeve family. Cite every sleeve's required
-deterministic IDs in specialty_evidence_ids, explain the exact rule role for
-every ID in specialty_evidence_usage, and let deterministic code bind evidence-
-derived prices and windows into the corresponding sleeve parameters. Do not
-transcribe or estimate anchor prices, moving-average windows, volume lookbacks,
-or pattern necklines in the multi-ETF proposal.
+deterministic opportunity through its short `O###` opportunity_ref. Never
+transcribe or recombine symbols, executors, evidence IDs, opportunity IDs,
+ranks, or scores. Deterministic code expands each atomic reference into the
+canonical shared contract and binds evidence-derived prices and windows into
+the corresponding sleeve parameters. Do not mention O### references in
+narrative fields, and do not estimate anchor prices, moving-average windows,
+volume lookbacks, or pattern necklines in the multi-ETF proposal.
 
 Optimize for repeatable net risk-adjusted return over the PM's supplied
 horizon after costs, subject to the stated risk tolerance; do not interpret
@@ -79,12 +81,16 @@ Preferred horizon-adaptive long-only sleeve contracts inside
   head-and-shoulders observation; author only `breakout_buffer_percent` and
   `technical_invalidation_buffer_percent`.
 
-Include `max_holding_bars`, `volatility_lookback_bars`,
-`profit_target_sigma_multiple`, and `stop_loss_sigma_multiple` once in the
-portfolio's `common_risk_parameters` using the supplied horizon-context values.
-Code treats those values, each rolling review configuration, the ETF symbol,
-and the equal target weight as authoritative and injects them into every child
-executor.
+Express every buffer as a decimal from 0.0 through 0.25, inclusive. Express
+`minimum_relative_volume` as a multiplier from 1.0 through 10.0, inclusive.
+These limits are identical to the deterministic child-executor contracts.
+
+Do not output `target_asset_count`, `selected_asset_count`,
+`allocation_method`, `selection_threshold`, `common_risk_parameters`, ETF
+symbols, target weights, evidence-derived prices/windows, or rolling review
+configuration. Those fields are code-owned. Code derives the holding,
+volatility, profit-target, stop-loss, review, and lookback settings from the
+supplied horizon context and injects them into every child executor.
 
 Support-reaction and resistance-breakout rules require the corresponding
 reliable non-fallback level. Volume-confirmed breakouts require both a reliable

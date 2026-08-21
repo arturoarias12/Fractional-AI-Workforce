@@ -7,6 +7,13 @@ from typing import TYPE_CHECKING, Any, Mapping
 
 from protocols import BacktestRequest
 
+from ..parameter_limits import (
+    MAX_RELATIVE_VOLUME_MULTIPLE,
+    MAX_TECHNICAL_BUFFER_PERCENT,
+    MIN_RELATIVE_VOLUME_MULTIPLE,
+    MIN_TECHNICAL_BUFFER_PERCENT,
+)
+
 if TYPE_CHECKING:
     from tools import StrategyEvaluationContext
 
@@ -56,15 +63,15 @@ class LevelParameters:
             entry_buffer_percent=number(
                 values,
                 "entry_buffer_percent",
-                minimum=0.0,
-                maximum=0.25,
+                minimum=MIN_TECHNICAL_BUFFER_PERCENT,
+                maximum=MAX_TECHNICAL_BUFFER_PERCENT,
             ),
             support_entry_floor_buffer_percent=(
                 number(
                     values,
                     "support_entry_floor_buffer_percent",
-                    minimum=0.0,
-                    maximum=0.25,
+                    minimum=MIN_TECHNICAL_BUFFER_PERCENT,
+                    maximum=MAX_TECHNICAL_BUFFER_PERCENT,
                 )
                 if support
                 else 0.0
@@ -72,8 +79,8 @@ class LevelParameters:
             technical_invalidation_buffer_percent=number(
                 values,
                 "technical_invalidation_buffer_percent",
-                minimum=0.0,
-                maximum=0.25,
+                minimum=MIN_TECHNICAL_BUFFER_PERCENT,
+                maximum=MAX_TECHNICAL_BUFFER_PERCENT,
             ),
         )
 
@@ -418,15 +425,15 @@ class RollingLevelParameters:
             entry_buffer_percent=number(
                 values,
                 "entry_buffer_percent",
-                minimum=0.0,
-                maximum=0.25,
+                minimum=MIN_TECHNICAL_BUFFER_PERCENT,
+                maximum=MAX_TECHNICAL_BUFFER_PERCENT,
             ),
             support_entry_floor_buffer_percent=(
                 number(
                     values,
                     "support_entry_floor_buffer_percent",
-                    minimum=0.0,
-                    maximum=0.25,
+                    minimum=MIN_TECHNICAL_BUFFER_PERCENT,
+                    maximum=MAX_TECHNICAL_BUFFER_PERCENT,
                 )
                 if support
                 else 0.0
@@ -434,8 +441,8 @@ class RollingLevelParameters:
             technical_invalidation_buffer_percent=number(
                 values,
                 "technical_invalidation_buffer_percent",
-                minimum=0.0,
-                maximum=0.25,
+                minimum=MIN_TECHNICAL_BUFFER_PERCENT,
+                maximum=MAX_TECHNICAL_BUFFER_PERCENT,
             ),
             volume_lookback_bars=(
                 positive_integer(
@@ -451,8 +458,8 @@ class RollingLevelParameters:
                 number(
                     values,
                     "minimum_relative_volume",
-                    minimum=1.0,
-                    maximum=10.0,
+                    minimum=MIN_RELATIVE_VOLUME_MULTIPLE,
+                    maximum=MAX_RELATIVE_VOLUME_MULTIPLE,
                 )
                 if require_volume
                 else None
@@ -685,8 +692,8 @@ class VolumeBreakoutParameters:
             minimum_relative_volume=number(
                 values,
                 "minimum_relative_volume",
-                minimum=1.0,
-                maximum=10.0,
+                minimum=MIN_RELATIVE_VOLUME_MULTIPLE,
+                maximum=MAX_RELATIVE_VOLUME_MULTIPLE,
             ),
         )
 
@@ -783,14 +790,14 @@ class PatternParameters:
             breakout_buffer_percent=number(
                 values,
                 "breakout_buffer_percent",
-                minimum=0.0,
-                maximum=0.25,
+                minimum=MIN_TECHNICAL_BUFFER_PERCENT,
+                maximum=MAX_TECHNICAL_BUFFER_PERCENT,
             ),
             technical_invalidation_buffer_percent=number(
                 values,
                 "technical_invalidation_buffer_percent",
-                minimum=0.0,
-                maximum=0.25,
+                minimum=MIN_TECHNICAL_BUFFER_PERCENT,
+                maximum=MAX_TECHNICAL_BUFFER_PERCENT,
             ),
         )
 
@@ -1180,6 +1187,70 @@ class TechnicalPortfolioParameters:
         )
 
 
+def validate_technical_portfolio_parameters(
+    values: Mapping[str, Any],
+) -> TechnicalPortfolioParameters:
+    """Validate the portfolio and every fully bound child executor contract."""
+
+    portfolio = TechnicalPortfolioParameters.from_mapping(values)
+    sleeve_weight = (
+        portfolio.portfolio_target_gross_weight
+        / portfolio.selected_asset_count
+    )
+    for index, sleeve in enumerate(portfolio.sleeves, start=1):
+        merged_parameters = {
+            **portfolio.common_risk_parameters,
+            **sleeve.family_parameters,
+            "symbol": sleeve.symbol,
+            "target_weight": sleeve_weight,
+        }
+        try:
+            if sleeve.executor_id == ROLLING_SUPPORT_REACTION_EXECUTOR_ID:
+                RollingLevelParameters.from_mapping(
+                    merged_parameters,
+                    support=True,
+                )
+            elif sleeve.executor_id == ROLLING_RESISTANCE_BREAKOUT_EXECUTOR_ID:
+                RollingLevelParameters.from_mapping(
+                    merged_parameters,
+                    support=False,
+                )
+            elif sleeve.executor_id == ROLLING_VOLUME_BREAKOUT_EXECUTOR_ID:
+                RollingLevelParameters.from_mapping(
+                    merged_parameters,
+                    support=False,
+                    require_volume=True,
+                )
+            elif sleeve.executor_id == SUPPORT_REACTION_EXECUTOR_ID:
+                LevelParameters.from_mapping(
+                    merged_parameters,
+                    support=True,
+                )
+            elif sleeve.executor_id == RESISTANCE_BREAKOUT_EXECUTOR_ID:
+                LevelParameters.from_mapping(
+                    merged_parameters,
+                    support=False,
+                )
+            elif sleeve.executor_id == MOVING_AVERAGE_TREND_EXECUTOR_ID:
+                MovingAverageParameters.from_mapping(merged_parameters)
+            elif sleeve.executor_id == HORIZON_ADAPTIVE_TREND_EXECUTOR_ID:
+                HorizonAdaptiveTrendParameters.from_mapping(merged_parameters)
+            elif sleeve.executor_id == VOLUME_BREAKOUT_EXECUTOR_ID:
+                VolumeBreakoutParameters.from_mapping(merged_parameters)
+            elif sleeve.executor_id == INVERSE_PATTERN_EXECUTOR_ID:
+                PatternParameters.from_mapping(merged_parameters)
+            else:  # Defensive: from_mapping already rejects unknown families.
+                raise ValueError(
+                    f"unsupported child executor '{sleeve.executor_id}'"
+                )
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"sleeves[{index}] '{sleeve.symbol}' parameters violate "
+                f"{sleeve.executor_id}: {exc}"
+            ) from exc
+    return portfolio
+
+
 class MultiAssetPortfolioSession:
     """Combine independently stateful ETF sleeves into one target mapping."""
 
@@ -1259,7 +1330,7 @@ class MultiAssetTechnicalPortfolioExecutor:
     executor_id = MULTI_ASSET_PORTFOLIO_EXECUTOR_ID
 
     def create_session(self, request: BacktestRequest) -> MultiAssetPortfolioSession:
-        parameters = TechnicalPortfolioParameters.from_mapping(
+        parameters = validate_technical_portfolio_parameters(
             request.candidate.parameters
         )
         return MultiAssetPortfolioSession(request, parameters)
@@ -1381,5 +1452,6 @@ __all__ = [
     "rolling_support_reaction_executor",
     "rolling_volume_confirmed_breakout_executor",
     "support_reaction_executor",
+    "validate_technical_portfolio_parameters",
     "volume_confirmed_breakout_executor",
 ]

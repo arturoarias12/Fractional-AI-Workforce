@@ -1,6 +1,6 @@
 """Gemini adapter for the provider-neutral ModelClient protocol.
 
-Reads GEMINI_API_KEY (and optionally MODEL_NAME) from the environment, so
+Reads GEMINI_API_KEY (and optionally GEMINI_MODEL) from the environment, so
 nothing about which provider is in use is hard-coded here beyond "this file
 happens to call Gemini." Any agent that accepts a `model_client` can use
 this without knowing it's Gemini underneath.
@@ -42,7 +42,10 @@ class GeminiModelClient:
     ) -> None:
         self._api_key = api_key or os.environ["GEMINI_API_KEY"]
         self._model_name = (
-            model_name or os.environ.get("MODEL_NAME") or DEFAULT_MODEL_NAME
+            model_name
+            or os.environ.get("GEMINI_MODEL")
+            or os.environ.get("MODEL_NAME")  # Backward-compatible legacy name.
+            or DEFAULT_MODEL_NAME
         )
         self._client = genai.Client(api_key=self._api_key)
 

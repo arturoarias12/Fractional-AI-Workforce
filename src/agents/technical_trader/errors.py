@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class TechnicalTraderError(Exception):
     """Base class for errors raised by this package."""
@@ -18,6 +20,14 @@ class AgentInputValidationError(TechnicalTraderError):
 class ModelInvocationError(TechnicalTraderError):
     """The configured model client could not complete a request."""
 
+    def __init__(self, message: str, *, raw_payload: Any = None) -> None:
+        super().__init__(message)
+        self.raw_payload = raw_payload
+
+
+class StructuredOutputValidationError(ModelInvocationError):
+    """A provider returned JSON that failed the requested closed contract."""
+
 
 class ModelTimeoutError(ModelInvocationError):
     """A model call exceeded its configured deadline."""
@@ -29,6 +39,10 @@ class AgentTimeoutError(TechnicalTraderError):
 
 class AgentOutputValidationError(TechnicalTraderError):
     """A model response did not satisfy the agent output contract."""
+
+    def __init__(self, message: str, *, raw_payload: Any = None) -> None:
+        super().__init__(message)
+        self.raw_payload = raw_payload
 
 
 class StrategyBoundaryError(AgentOutputValidationError):

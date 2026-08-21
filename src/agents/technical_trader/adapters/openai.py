@@ -16,9 +16,9 @@ from ._common import (
     member,
     opaque_context_id,
     optional_nonnegative_int,
-    response_schema,
     schema_name,
     sdk_version,
+    strict_response_schema,
     structured_json_instruction,
     total_tokens,
     validate_json_output,
@@ -114,16 +114,14 @@ class OpenAITechnicalModelClient:
         response_model: type[BaseModel],
         context: ModelRequestContext,
     ) -> ModelCallResult[Any]:
-        schema = response_schema(response_model)
+        schema = strict_response_schema(response_model)
         submitted_prompt = user_prompt
         if self._output_mode == "json_schema":
             output_format: dict[str, Any] = {
                 "type": "json_schema",
                 "name": schema_name(response_model),
                 "schema": schema,
-                # The project models intentionally contain extensible mappings.
-                # Pydantic performs the final strict validation locally.
-                "strict": False,
+                "strict": True,
             }
         else:
             output_format = {"type": "json_object"}

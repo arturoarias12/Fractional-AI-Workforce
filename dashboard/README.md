@@ -9,7 +9,7 @@ From the repository root:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -e '.[langgraph,fundamental-demo,quant-demo]'
+.venv/bin/pip install -e '.[full-demo]'
 .venv/bin/pip install -r dashboard/requirements.txt
 .venv/bin/streamlit run dashboard/app.py
 ```
@@ -24,6 +24,10 @@ ETF_historical_prices.xlsx
 ETF_info.xlsx
 ```
 
+Copy the repository root `.env.example` to `.env` and configure an OpenAI or
+Anthropic API key to run the real Technical Trader. The same configuration is
+used whether the workflow is launched from the terminal or the dashboard.
+
 ## What to use in the app
 
 - **Current workflow** is the main path. Create a PM Research Request, keep
@@ -36,20 +40,22 @@ ETF_info.xlsx
 
 The local pilot runs this workflow:
 
-`PM mandate → Fundamental + Quant → Risk → Reporting → dashboard snapshot`
+`PM mandate → Technical + Fundamental + Quant → Risk → Reporting → PM → Memory`
 
-- Fundamental, Quant, Risk, and Reporting use the team's current code.
+- Technical uses the selected model provider plus deterministic analysis and
+  backtesting. Without provider configuration, its branch is clearly labeled
+  as stubbed and is not eligible for Risk review.
+- Fundamental, Quant, Risk, and Reporting use the project's current runtime
+  implementations.
 - The dashboard renders candidate rules, held-out backtest metrics, Risk review,
   and the PM-facing comparison without requiring an LLM.
 - The dashboard reads workflow state through a stable snapshot contract:
   `WorkflowState → workflow_adapter → workflow_snapshot.json → dashboard`.
+- The final PM decision is a durable LangGraph interrupt. A run can be resumed
+  after the decision without losing its checkpoint or Memory record.
 
 ## Current limitations
 
-- Technical Trader is shown as unavailable because the repository does not yet
-  provide a concrete `ModelClient`.
-- The final PM decision is scripted as `Reject` in this one-round pilot.
-  Select / Reject / Another Round are not yet connected to workflow resume.
 - In the live pilot, as-of date, permitted ETF universe, and prohibited assets
   affect Fundamental and Quant. Other PM mandate fields are preserved but do
   not yet change their fixed research rules.

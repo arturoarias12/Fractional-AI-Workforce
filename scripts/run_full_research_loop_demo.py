@@ -22,14 +22,10 @@ the real runtime whenever ``TECHNICAL_TRADER_MODEL_PROVIDER`` (and the
 matching model + API key) are set; otherwise it falls back to a clearly
 labeled stub node so the graph topology still runs end-to-end.
 
-Verified in the environment this integration was written in: imports, model
-client construction, engine/executor registration (``TECHNICAL_STRATEGY_EXECUTORS``),
-and runtime construction all succeed; with a placeholder API key, the full
-graph runs and Technical Trader settles as a real (non-stub) failed package
-when the provider call itself is rejected, exactly as the contract expects -
-no crash, no silently-swallowed error. A live smoke test with a real API key
-was not possible without provider network access in that environment; that
-is the one thing left for whoever runs this with real credentials.
+The composition path supports both OpenAI and Anthropic. A missing provider
+selection deliberately uses the labeled stub; once a provider is selected,
+incomplete or invalid configuration fails clearly instead of silently
+downgrading the run.
 
 Everything downstream of the trader join (Risk, Reporting, PM decision,
 Memory write) runs for real regardless of which trader nodes are real vs
@@ -60,7 +56,7 @@ from __future__ import annotations
 import asyncio
 import argparse
 import json
-import pickle
+import os
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -107,6 +103,10 @@ from dashboard.workflow_adapter import write_dashboard_snapshot  # noqa: E402
 from integration import WorkflowRunner  # noqa: E402
 from services.file_memory_store import FileBackedMemoryStore  # noqa: E402
 from protocols.research_contracts import MemoryRecord  # noqa: E402
+from scripts.horizon_matched_validation import (  # noqa: E402
+    HorizonMatchedValidationSplitPolicy,
+)
+from scripts.full_test_identity import derive_demo_identifiers  # noqa: E402
 
 # Real Technical Trader is optional at import time: only constructed in main()
 # if TECHNICAL_TRADER_MODEL_PROVIDER etc. are actually set (see
@@ -114,6 +114,7 @@ from protocols.research_contracts import MemoryRecord  # noqa: E402
 # reads credentials - see agents/technical_trader/docs/integration.md.
 from agents.technical_trader import (  # noqa: E402
     ExecutionPolicy as TechnicalExecutionPolicy,
+    JsonFileTechnicalDiagnosticsSink,
     TECHNICAL_STRATEGY_EXECUTORS,
     TechnicalModelConfigurationError,
     create_technical_model_client_from_env,
@@ -125,24 +126,72 @@ from agents.technical_trader import (  # noqa: E402
 # out-of-sample "must beat the benchmark" gate).
 TECHNICAL_TRADER_BENCHMARK_SYMBOL = "IVV"
 
-langgraph_missing = False
+langgraph_import_error: ImportError | None = None
 try:
     from graph.production import ProductionNodeSet, compile_production_workflow  # noqa: E402
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver  # noqa: E402
-except ImportError:
-    langgraph_missing = True
+except ImportError as import_error:
+    langgraph_import_error = import_error
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-RUN_ID = "full-loop-demo-run"
-WORKFLOW_ID = "full-loop-demo-workflow"
-TASK_ID = "full-loop-demo-task"
+
+# Loading a repo-local .env is a convenience for this executable composition
+# root only. Shell/deployment variables retain precedence, and importing the
+# Technical Trader package itself never reads credentials.
+try:
+    from dotenv import load_dotenv
+except ImportError:  # Environment-only configuration remains supported.
+    load_dotenv = None
+if load_dotenv is not None:
+    load_dotenv(REPO_ROOT / ".env", override=False)
+
+
+def _offline_data_path(environment_name: str, default_name: str) -> Path:
+    """Resolve an optional data path relative to the repository root."""
+
+    configured = os.environ.get(environment_name, "").strip()
+    path = Path(configured).expanduser() if configured else Path(default_name)
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    return path.resolve()
+
+
+OFFLINE_PRICES_PATH = _offline_data_path(
+    "ETF_HISTORICAL_PRICES_PATH",
+    "ETF_historical_prices.xlsx",
+)
+OFFLINE_METADATA_PATH = _offline_data_path("ETF_INFO_PATH", "ETF_info.xlsx")
+
+
+def _require_offline_data() -> None:
+    missing = [
+        path
+        for path in (OFFLINE_PRICES_PATH, OFFLINE_METADATA_PATH)
+        if not path.is_file()
+    ]
+    if not missing:
+        return
+    formatted = "\n".join(f"  - {path}" for path in missing)
+    raise FileNotFoundError(
+        "The full-loop demo requires the team-supplied offline ETF data. "
+        "The following file(s) were not found:\n"
+        f"{formatted}\n"
+        "Place the workbooks in the repository root or set "
+        "ETF_HISTORICAL_PRICES_PATH and ETF_INFO_PATH in .env."
+    )
+
+
+RUN_ID, WORKFLOW_ID, TASK_ID = derive_demo_identifiers()
 
 # Both persist to disk (not in-process only) because the dashboard launches
 # each round as a fresh subprocess: a paused PM-decision interrupt and any
 # recorded Memory must survive that process exiting. See
 # docs/fundamental_trader.md and this script's module docstring.
 CHECKPOINT_DB_PATH = REPO_ROOT / "dashboard" / "data" / "workflow_checkpoints.sqlite"
+TECHNICAL_DIAGNOSTICS_PATH = (
+    REPO_ROOT / "dashboard" / "data" / "technical_trader_diagnostics"
+)
 MEMORY_STORE_DIR = REPO_ROOT / "dashboard" / "data" / "memory"
 
 
@@ -150,44 +199,103 @@ MEMORY_STORE_DIR = REPO_ROOT / "dashboard" / "data" / "memory"
 # Offline data fixtures (real 120-ticker ETF data, no network)
 # ---------------------------------------------------------------------------
 
-def _load_offline_panel() -> dict[str, tuple[PriceBar, ...]]:
-    cache = Path("/tmp/price_panel.pkl")
-    if cache.exists():
-        with cache.open("rb") as f:
-            return pickle.load(f)
+def _normalize_offline_ohlc(
+    *,
+    open_price: float,
+    high_price: float,
+    low_price: float,
+    close_price: float,
+) -> tuple[float, float, float, float, bool]:
+    """Repair only row-local OHLC bounds in the frozen demo fixture.
 
+    Source rounding or formatting can leave a reported high or low inside
+    another value from the same row. Canonicalizing the extrema keeps
+    valid rows unchanged and does not interpolate, remove, or invent dates.
+    The returned flag makes every adjusted row countable and disclosable.
+    """
+
+    values = (
+        float(open_price),
+        float(high_price),
+        float(low_price),
+        float(close_price),
+    )
+    normalized_high = max(values)
+    normalized_low = min(values)
+    adjusted = normalized_high != values[1] or normalized_low != values[2]
+    return (
+        values[0],
+        normalized_high,
+        normalized_low,
+        values[3],
+        adjusted,
+    )
+
+
+def _load_offline_panel() -> tuple[
+    dict[str, tuple[PriceBar, ...]],
+    dict[str, int],
+]:
     from openpyxl import load_workbook
 
-    prices_path = REPO_ROOT / "ETF_historical_prices.xlsx"
-    if not prices_path.exists():
-        raise FileNotFoundError(
-            f"{prices_path} not found - copy your ETF_historical_prices.xlsx "
-            "into the repo root before running this demo."
-        )
-    wb = load_workbook(str(prices_path), read_only=True)
+    wb = load_workbook(str(OFFLINE_PRICES_PATH), read_only=True)
     ws = wb.active
     rows = ws.iter_rows(values_only=True)
     header = next(rows)
     idx = {h: i for i, h in enumerate(header)}
     panel: dict[str, list[PriceBar]] = {}
+    adjustments_by_symbol: dict[str, int] = {}
     for r in rows:
         ticker, dt, close = r[idx["ticker"]], r[idx["date"]], r[idx["close"]]
         if ticker is None or dt is None or close is None:
             continue
+        open_price, high_price, low_price, close_price, adjusted = (
+            _normalize_offline_ohlc(
+                open_price=r[idx["open"]] or close,
+                high_price=r[idx["high"]] or close,
+                low_price=r[idx["low"]] or close,
+                close_price=close,
+            )
+        )
+        if adjusted:
+            adjustments_by_symbol[ticker] = (
+                adjustments_by_symbol.get(ticker, 0) + 1
+            )
         panel.setdefault(ticker, []).append(PriceBar(
             symbol=ticker,
             timestamp=dt.replace(tzinfo=timezone.utc),
-            open=r[idx["open"]] or close, high=r[idx["high"]] or close,
-            low=r[idx["low"]] or close, close=close,
+            open=open_price, high=high_price,
+            low=low_price, close=close_price,
         ))
-    return {k: tuple(v) for k, v in panel.items()}
+    return {k: tuple(v) for k, v in panel.items()}, adjustments_by_symbol
 
 
-PANEL = _load_offline_panel()
-METADATA = _load_etf_metadata(REPO_ROOT / "ETF_info.xlsx")
-OFFLINE_DATA_MAX_DATE = max(
-    bar.timestamp.date() for bars in PANEL.values() for bar in bars
-)
+PANEL: dict[str, tuple[PriceBar, ...]] = {}
+OFFLINE_OHLC_ADJUSTMENTS_BY_SYMBOL: dict[str, int] = {}
+METADATA: dict[str, dict[str, Any]] = {}
+OFFLINE_DATA_MAX_DATE = date.min
+
+
+def _initialize_offline_data() -> None:
+    """Load team fixtures once, after CLI parsing and dependency checks."""
+
+    global PANEL
+    global OFFLINE_OHLC_ADJUSTMENTS_BY_SYMBOL
+    global METADATA
+    global OFFLINE_DATA_MAX_DATE
+
+    if PANEL:
+        return
+    _require_offline_data()
+    PANEL, OFFLINE_OHLC_ADJUSTMENTS_BY_SYMBOL = _load_offline_panel()
+    METADATA = _load_etf_metadata(OFFLINE_METADATA_PATH)
+    if not PANEL:
+        raise ValueError(
+            f"No valid price series were found in {OFFLINE_PRICES_PATH}."
+        )
+    OFFLINE_DATA_MAX_DATE = max(
+        bar.timestamp.date() for bars in PANEL.values() for bar in bars
+    )
 
 
 class OfflineDataService:
@@ -204,6 +312,10 @@ class OfflineDataService:
 
         price_payload = {s: PANEL[s] for s in symbols if s in PANEL}
         if price_payload:
+            adjustment_count = sum(
+                OFFLINE_OHLC_ADJUSTMENTS_BY_SYMBOL.get(symbol, 0)
+                for symbol in price_payload
+            )
             artifacts.append(DataArtifact(
                 artifact_id=f"{request.request_id}.prices",
                 category=DataCategory.PRICE_VOLUME,
@@ -212,10 +324,20 @@ class OfflineDataService:
                 asset_scope=sorted(price_payload),
                 provenance=[DataProvenance(
                     provenance_id=f"{request.request_id}.prices.prov", provider="offline_fixture",
-                    source_reference="ETF_historical_prices.xlsx", retrieved_at=now,
+                    source_reference=OFFLINE_PRICES_PATH.name, retrieved_at=now,
                     point_in_time_verified=False,
                 )],
                 analysis_payload=price_payload,
+                limitations=(
+                    [
+                        f"Normalized high/low bounds on "
+                        f"{adjustment_count} frozen-fixture rows "
+                        "so each row's high and low bound its OHLC values; "
+                        "dates and open/close values were unchanged."
+                    ]
+                    if adjustment_count
+                    else []
+                ),
             ))
 
         meta_payload = {
@@ -232,7 +354,7 @@ class OfflineDataService:
                 asset_scope=sorted(meta_payload),
                 provenance=[DataProvenance(
                     provenance_id=f"{request.request_id}.meta.prov", provider="offline_fixture",
-                    source_reference="ETF_info.xlsx", retrieved_at=now,
+                    source_reference=OFFLINE_METADATA_PATH.name, retrieved_at=now,
                     point_in_time_verified=False,
                 )],
                 analysis_payload=meta_payload,
@@ -248,10 +370,9 @@ class OfflineDataService:
 class OfflineBacktestResolver:
     """Resolves backtest bars from the real fixture panel - no network.
 
-    Handles both single-ticker candidates (Quant Trader: ticker_a/ticker_b)
-    and Fundamental Trader's ticker + benchmark_tickers list - see
-    docs/fundamental_trader.md for why the shared resolver alone isn't
-    enough for the latter.
+    Handles single-ticker candidates, Quant pairs, Fundamental benchmark
+    lists, and Technical multi-asset sleeves without changing any agent
+    contract.
     """
 
     async def resolve(self, request: BacktestRequest) -> ResolvedBacktestData:
@@ -262,6 +383,16 @@ class OfflineBacktestResolver:
             if value:
                 symbols.append(str(value))
         symbols.extend(str(s) for s in params.get("benchmark_tickers", []))
+        raw_sleeves = params.get("sleeves", [])
+        if isinstance(raw_sleeves, list):
+            symbols.extend(
+                str(sleeve["symbol"])
+                for sleeve in raw_sleeves
+                if isinstance(sleeve, Mapping) and sleeve.get("symbol")
+            )
+        benchmark = getattr(getattr(request, "plan", None), "benchmark", None)
+        if benchmark:
+            symbols.append(str(benchmark))
         bars = tuple(bar for s in dict.fromkeys(symbols) if s in PANEL for bar in PANEL[s])
         return ResolvedBacktestData(data_references=("offline_fixture",), bars=bars)
 
@@ -274,11 +405,11 @@ def _stub_technical_trader_package(
     mandate: PMMandate,
     round_number: int,
 ) -> TraderStrategyPackage:
-    """A realistic, schema-valid stand-in - NOT a real model call.
+    """A schema-valid stand-in used only without provider configuration.
 
     Fills the graph's technical_trader slot so the full topology (3 trader
     branches -> join -> Risk -> Reporting -> PM) can be exercised end-to-end.
-    Values are illustrative, not the output of Arturo's real staged pipeline.
+    Values are illustrative and are not Technical Trader research output.
     """
     from protocols import (
         CandidateRuleSpecification,
@@ -327,8 +458,9 @@ def _stub_technical_trader_package(
             "stage": "technical_trader.stub_demo",
             "message": (
                 "This demo run stubs Technical Trader because no ModelClient "
-                "implementation exists yet in the repo. Not eligible for Risk "
-                "review - see scripts/run_full_research_loop_demo.py."
+                "provider was configured. It is not eligible for Risk review; "
+                "set the Technical Trader environment variables described in "
+                ".env.example to run the real agent."
             ),
             "retryable": False,
         }],
@@ -447,7 +579,8 @@ def _build_nodes(memory_store: FileBackedMemoryStore) -> "ProductionNodeSet":
     async def fundamental_trader_node(state: Mapping[str, Any]) -> dict[str, Any]:
         current_mandate = PMMandate.model_validate(state["pm_mandate"])
         package = await fundamental_runtime.research(current_mandate, execution_context={
-            "run_id": RUN_ID, "round_number": state.get("round_number", 1), "attempt": 1,
+            "run_id": f"{current_mandate.workflow_id}.run",
+            "round_number": state.get("round_number", 1), "attempt": 1,
         })
         return {"fundamental_trader_package": package.model_dump(mode="json")}
 
@@ -465,18 +598,12 @@ def _build_nodes(memory_store: FileBackedMemoryStore) -> "ProductionNodeSet":
     async def quant_trader_node(state: Mapping[str, Any]) -> dict[str, Any]:
         current_mandate = PMMandate.model_validate(state["pm_mandate"])
         package = await quant_runtime.research(current_mandate, execution_context={
-            "run_id": RUN_ID, "round_number": state.get("round_number", 1), "attempt": 1,
+            "run_id": f"{current_mandate.workflow_id}.run",
+            "round_number": state.get("round_number", 1), "attempt": 1,
         })
         return {"quant_trader_package": package.model_dump(mode="json")}
 
     # --- Technical Trader: real if credentials are configured, else stubbed ---
-    # No API key was available to verify a live model call end-to-end in the
-    # environment this integration was written in - see this module's
-    # docstring. Everything up to the actual provider call (imports, model
-    # client construction, engine/executor registration, runtime
-    # construction) has been verified to wire together correctly; a live
-    # smoke test with real credentials is the one thing left for whoever
-    # runs this with a real TECHNICAL_TRADER_MODEL_PROVIDER / API key set.
     try:
         technical_execution_policy = TechnicalExecutionPolicy()
         technical_model_client = create_technical_model_client_from_env(
@@ -491,8 +618,11 @@ def _build_nodes(memory_store: FileBackedMemoryStore) -> "ProductionNodeSet":
             data_service=OfflineDataService(),
             backtest_engine=technical_backtest_engine,
             available_executors=[e.executor_id for e in TECHNICAL_STRATEGY_EXECUTORS],
-            validation_split_policy=PercentileValidationSplitPolicy(train_fraction=0.9),
+            validation_split_policy=HorizonMatchedValidationSplitPolicy(),
             benchmark_symbol=TECHNICAL_TRADER_BENCHMARK_SYMBOL,
+            diagnostics_sink=JsonFileTechnicalDiagnosticsSink(
+                TECHNICAL_DIAGNOSTICS_PATH
+            ),
             execution_policy=technical_execution_policy,
         )
         print(
@@ -503,11 +633,18 @@ def _build_nodes(memory_store: FileBackedMemoryStore) -> "ProductionNodeSet":
         async def technical_trader_node(state: Mapping[str, Any]) -> dict[str, Any]:
             current_mandate = PMMandate.model_validate(state["pm_mandate"])
             package = await technical_runtime.research(current_mandate, execution_context={
-                "run_id": RUN_ID, "round_number": state.get("round_number", 1), "attempt": 1,
+                "run_id": f"{current_mandate.workflow_id}.run",
+                "round_number": state.get("round_number", 1), "attempt": 1,
             })
             return {"technical_trader_package": package.model_dump(mode="json")}
 
     except TechnicalModelConfigurationError as config_error:
+        if os.environ.get("TECHNICAL_TRADER_MODEL_PROVIDER", "").strip():
+            raise RuntimeError(
+                "Technical Trader provider configuration is invalid. Review "
+                ".env.example and the underlying error: "
+                f"{config_error}"
+            ) from config_error
         print(
             "Technical Trader: STUBBED - no model provider configured "
             f"({config_error}). Set TECHNICAL_TRADER_MODEL_PROVIDER, "
@@ -590,9 +727,13 @@ async def main(
     run_id: str | None = None,
     decision_path: Path | None = None,
 ) -> None:
-    if langgraph_missing:
-        print("langgraph is not installed - run: pip install -e '.[langgraph]'")
-        return
+    if langgraph_import_error is not None:
+        raise RuntimeError(
+            "Full-loop dependencies are not installed. Run "
+            "pip install -e '.[full-demo]'."
+        ) from langgraph_import_error
+
+    _initialize_offline_data()
 
     CHECKPOINT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     memory_store = FileBackedMemoryStore(MEMORY_STORE_DIR)
@@ -624,6 +765,20 @@ async def main(
             }
             if payload.get("active_specialists"):
                 workflow_input["active_specialists"] = payload["active_specialists"]
+
+            config = {"configurable": {"thread_id": mandate.workflow_id}}
+            existing_checkpoint = await compiled.aget_state(config)
+            existing_values = getattr(
+                existing_checkpoint,
+                "values",
+                existing_checkpoint,
+            )
+            if isinstance(existing_values, Mapping) and existing_values:
+                raise RuntimeError(
+                    "A checkpoint already exists for workflow_id "
+                    f"'{mandate.workflow_id}'. Start with a fresh "
+                    "FULL_TEST_WORKFLOW_ID or use --resume with that ID."
+                )
 
             print("Running one research-loop round (or resuming to the next PM decision)...")
             print("  Real: Fundamental Trader, Quant Trader, Risk Agent, Reporting Agent, Memory")

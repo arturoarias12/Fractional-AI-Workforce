@@ -3,6 +3,8 @@ __pycache__/
 .pytest_cache/
 .venv/
 .env
+.env.*
+!.env.example
 dist/
 build/
 *.egg-info/
@@ -23,3 +25,4 @@ dashboard/data/live_workflow.log
 # for the live pilot, not source, and workflow_id-specific to one machine.
 dashboard/data/workflow_checkpoints.sqlite
 dashboard/data/memory/
+dashboard/data/technical_trader_diagnostics/

@@ -12,7 +12,9 @@ from protocols import PMMandate, ValidationSplit
 from ..executors import render_executor_catalog
 from ..horizon import resolve_technical_horizon
 from .compaction import (
+    CandidatePromptScope,
     DEFAULT_CANDIDATE_PROMPT_ASSETS,
+    build_opportunity_prompt_report,
     compact_horizon_technical_report,
 )
 
@@ -41,6 +43,18 @@ def _json(value: Any) -> str:
     if isinstance(value, BaseModel):
         value = value.model_dump(mode="json")
     return json.dumps(value, indent=2, sort_keys=True, default=str)
+
+
+def _candidate_prompt_report(
+    technical_analysis: BaseModel,
+    max_prompt_assets: int,
+) -> dict[str, Any]:
+    compact = compact_horizon_technical_report(
+        technical_analysis.model_dump(mode="json"),
+        max_assets=max_prompt_assets,
+    )
+    scope = CandidatePromptScope.from_compacted_report(compact)
+    return build_opportunity_prompt_report(compact, scope)
 
 
 def render_research_plan(
@@ -99,13 +113,10 @@ def render_candidate_proposal(
     prompt_report = (
         dict(candidate_prompt_report)
         if candidate_prompt_report is not None
-        else compact_horizon_technical_report(
-            technical_analysis.model_dump(mode="json"),
-            max_assets=max_prompt_assets,
-        )
+        else _candidate_prompt_report(technical_analysis, max_prompt_assets)
     )
     benchmark_instruction = (
-        f"Use exactly `{required_benchmark}` as the benchmark."
+        f"Code will bind exactly `{required_benchmark}` as the benchmark."
         if required_benchmark is not None
         else (
             "Select one PM-permitted benchmark and declare it explicitly; "
@@ -120,24 +131,20 @@ when the selected registered executor explicitly supports them.
 
 The candidate is dynamically generated for this mandate. Define its hypothesis,
 signal, position, entry, exit, rebalance, parameter, data, and constraint logic.
-Use the evidence kinds required by the selected executor and cite every used
-level, pattern, moving-average observation, or volume observation in
-specialty_evidence_ids. In specialty_evidence_usage, map each cited ID to the
-exact role it plays in the signal, entry, exit, or risk logic. Copy evidence-
-derived prices and windows only when the selected executor explicitly requires
-model-authored values. For the multi-ETF Technical portfolio, cite the evidence
-IDs and omit code-owned anchor prices, moving-average windows, volume lookbacks,
-and pattern necklines; deterministic code resolves those values from the cited
-report before validation and execution.
-Every sleeve must exactly match one supplied horizon opportunity by symbol,
-child executor, and its complete evidence-ID set. Do not add or omit even an
-otherwise in-scope evidence ID, because the combination is the executable
-opportunity contract.
-Provide a Backtest Engine plan, but do not calculate or predict any result.
-The shared validation policy has already selected the exact held-out window:
+For each sleeve, select exactly one supplied `opportunity_ref`. Return only the
+reference, expected_return_rationale, and model-authored family parameters for
+that sleeve. Do not return a sleeve symbol, executor, evidence ID, opportunity
+ID, rank, or score. Deterministic code binds all of those fields atomically from
+the selected opportunity, restores canonical audit IDs, and binds evidence-
+derived prices and windows before validation and execution. Do not mention an
+`O###` reference in narrative fields; describe the ETF and Technical setup.
+In backtest_plan, return only the closed transaction_cost_assumptions object
+described by the response schema. Do not return dates, frequency, benchmark,
+requested metrics, validation requirements, or held-out flags. Shared code
+binds the exact held-out window below, daily frequency, required benchmark,
+metrics, and validation policy after the response:
 {_json(validation_split)}
-Set requested_start_date and requested_end_date to those exact dates, use daily
-frequency, and set held_out_evaluation_required=true. {benchmark_instruction}
+{benchmark_instruction}
 
 Compare instruments as potential sleeves. Do not reward an asset merely
 because it has more detected levels. Raw touch counts are not directly
@@ -156,15 +163,14 @@ quality, conflicting observations, likely whipsaw or false-breakout exposure,
 and overlap visible in the supplied price-based evidence. Do not invent sector,
 fundamental, macroeconomic, or statistical-return information that was not
 provided. Select fewer than the target when the Technical case is not strong
-enough. Every sleeve must match one supplied horizon opportunity by symbol,
-executor, and evidence IDs. Do not author opportunity ID, rank, or score; code
-binds that metadata. A heuristic opportunity score ranks present Technical
+enough. Every sleeve must select one distinct supplied opportunity_ref, and no
+two sleeves may resolve to the same ETF. A heuristic opportunity score ranks present Technical
 setups; it is not proof of positive expected return.
 
-Set executor_id to exactly one registered executor below, and describe only a
-strategy that executor can implement with the supplied parameters. Never choose
-the closest executor when no exact match exists; an unmatched candidate must
-fail validation instead of receiving unrelated backtest results.
+The final shared executor is code-owned as the multi-asset Technical portfolio.
+Do not output a top-level executor_id. Supply only family parameters appropriate
+for each selected opportunity's displayed executor. Never approximate a
+different family when the selected opportunity is not suitable.
 
 Registered strategy executors:
 {executors}
@@ -204,19 +210,16 @@ def render_candidate_review(
     prompt_report = (
         dict(candidate_prompt_report)
         if candidate_prompt_report is not None
-        else compact_horizon_technical_report(
-            technical_analysis.model_dump(mode="json"),
-            max_assets=max_prompt_assets,
-        )
+        else _candidate_prompt_report(technical_analysis, max_prompt_assets)
     )
     benchmark_instruction = (
-        f"Keep exactly `{required_benchmark}` as the benchmark."
+        f"Code will keep exactly `{required_benchmark}` as the benchmark."
         if required_benchmark is not None
         else "Keep one explicit PM-permitted benchmark."
     )
     return f"""
 Act as the second-pass Technical portfolio reviewer. Return a complete revised
-CandidateProposalDraft, not commentary. Preserve a valid initial proposal only
+OpportunityCandidateProposalDraft, not commentary. Preserve a valid initial proposal only
 when it survives scrutiny; otherwise replace its sleeve selection or reduce its
 size.
 
@@ -233,13 +236,16 @@ Stay strictly within the Technical Trader lens. Do not add fundamental, macro,
 factor, predictive-statistical, or optimized-return claims. Do not calculate
 performance, infer expected return from the heuristic score, inspect held-out
 data, change the code-owned horizon, or invent evidence. Keep the registered
-executor, Backtest Plan window, benchmark, costs, and implementation contracts
-valid. Every retained sleeve must exactly match a supplied opportunity by
-symbol, child executor, and evidence IDs.
+executor, costs, and implementation contracts valid. Every retained sleeve
+must select exactly one supplied opportunity_ref.
+Do not output or reconstruct its symbol, executor, canonical evidence IDs,
+opportunity ID, rank, or score. Do not mention O### references in narrative
+fields. Code expands each reference atomically after your response.
 
-The code-owned held-out window is {_json(validation_split)}. Keep those exact
-requested start/end dates, daily frequency, and
-held_out_evaluation_required=true. {benchmark_instruction}
+The code-owned held-out window is {_json(validation_split)}. In backtest_plan,
+return only the closed transaction_cost_assumptions object. Do not output the
+window, daily frequency, held-out flag, benchmark, metrics, or validation
+requirements; code binds them after the response. {benchmark_instruction}
 
 Registered model-selectable executor:
 {executors}

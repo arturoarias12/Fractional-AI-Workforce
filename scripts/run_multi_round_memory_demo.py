@@ -201,7 +201,7 @@ def _stub_technical_trader_package(round_number: int):
             status=ConstraintCheckStatus.NOT_EVALUATED, requires_risk_validation=False,
         ),
         failures=[{"stage": "technical_trader.stub_demo",
-                   "message": "Stubbed - no ModelClient implementation exists yet.", "retryable": False}],
+                   "message": "Stubbed - this demo does not configure a Technical Trader model provider.", "retryable": False}],
         eligible_for_risk_review=False,
     )
 

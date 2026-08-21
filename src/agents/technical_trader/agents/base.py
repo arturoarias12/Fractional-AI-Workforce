@@ -139,7 +139,8 @@ class BaseAgent(ABC, Generic[InputT, OutputT]):
                 raise
             except ValidationError as exc:
                 raise AgentOutputValidationError(
-                    f"Invalid structured output from {self.agent_id}: {exc}"
+                    f"Invalid structured output from {self.agent_id}: {exc}",
+                    raw_payload=payload,
                 ) from exc
 
             status = ModelCallStatus.SUCCEEDED
@@ -170,7 +171,8 @@ class BaseAgent(ABC, Generic[InputT, OutputT]):
             error_type = type(exc).__name__
             error_message = str(exc) or type(exc).__name__
             raise ModelInvocationError(
-                f"Model invocation failed for {self.agent_id}:{context.operation}: {exc}"
+                f"Model invocation failed for {self.agent_id}:{context.operation}: {exc}",
+                raw_payload=getattr(exc, "raw_payload", None),
             ) from exc
         finally:
             completed_at = datetime.now(UTC)

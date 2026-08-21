@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 from abc import abstractmethod
 from collections.abc import Callable, Mapping, Sequence
+from datetime import date
 from typing import Any
 
 from pydantic import ValidationError
@@ -40,6 +42,12 @@ from ..errors import (
     AgentOutputValidationError,
     ServiceContractError,
 )
+from ..diagnostics import (
+    NullTechnicalDiagnosticsSink,
+    TechnicalCandidateDiagnostic,
+    TechnicalDiagnosticsSink,
+    proposal_payload,
+)
 from ..benchmark import BenchmarkSelectionPolicy
 from ..executors import (
     BENCHMARK_FALLBACK_EXECUTOR_ID,
@@ -56,6 +64,7 @@ from ..executors import (
     TECHNICAL_EXECUTOR_SPEC_BY_ID,
     TechnicalPortfolioParameters,
     VOLUME_BREAKOUT_EXECUTOR_ID,
+    validate_technical_portfolio_parameters,
 )
 from ..execution import ExecutionPolicy
 from ..horizon import (
@@ -72,12 +81,17 @@ from ..models.technical_analysis import (
     PriceLevelKind,
     TechnicalAnalysisReport,
 )
+from ..models.opportunity_selection import (
+    OpportunityCandidateProposalDraft,
+)
 from ..prompts import (
     CandidatePromptScope,
     DEFAULT_CANDIDATE_PROMPT_ASSETS,
     MAX_CANDIDATE_PROMPT_ASSETS,
     MIN_CANDIDATE_PROMPT_ASSETS,
+    build_opportunity_prompt_report,
     compact_horizon_technical_report,
+    redact_opportunity_references,
     render_backtest_interpretation,
     render_candidate_proposal,
     render_candidate_review,
@@ -90,6 +104,9 @@ from ..services import (
 )
 from ..tools import TechnicalAnalysisInputAdapter, TechnicalAnalysisToolkit
 from .base import BaseAgent
+
+
+logger = logging.getLogger(__name__)
 
 
 class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
@@ -114,6 +131,7 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         candidate_prompt_max_assets: int = DEFAULT_CANDIDATE_PROMPT_ASSETS,
         benchmark_selection_policy: BenchmarkSelectionPolicy | None = None,
         metrics_sink: MetricsSink | None = None,
+        diagnostics_sink: TechnicalDiagnosticsSink | None = None,
         execution_policy: ExecutionPolicy | None = None,
     ) -> None:
         if validation_split_policy is None:
@@ -158,11 +176,12 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             benchmark_selection_policy or BenchmarkSelectionPolicy()
         )
         self._validation_split_policy = validation_split_policy
-        self._benchmark_symbol = (
-            benchmark_symbol.strip()
-            if benchmark_symbol is not None and benchmark_symbol.strip()
-            else None
-        )
+        if benchmark_symbol is None or not benchmark_symbol.strip():
+            raise ValueError(
+                "benchmark_symbol is required because shared code, not the "
+                "Technical model, owns benchmark selection and its calendar."
+            )
+        self._benchmark_symbol = benchmark_symbol.strip()
         if (
             isinstance(candidate_prompt_max_assets, bool)
             or not MIN_CANDIDATE_PROMPT_ASSETS
@@ -179,6 +198,11 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         self._technical_toolkit = technical_toolkit
         self._system_prompt = system_prompt
         self._lens_requirements = lens_requirements
+        self._diagnostics_sink = (
+            diagnostics_sink
+            if diagnostics_sink is not None
+            else NullTechnicalDiagnosticsSink()
+        )
 
     @property
     @abstractmethod
@@ -206,6 +230,14 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         validation_split: ValidationSplit | None = None
         candidate_prompt_report: dict[str, Any] | None = None
         candidate_prompt_scope: CandidatePromptScope | None = None
+        initial_prompt_proposal: (
+            OpportunityCandidateProposalDraft | None
+        ) = None
+        initial_proposal: CandidateProposalDraft | None = None
+        reviewed_prompt_proposal: (
+            OpportunityCandidateProposalDraft | None
+        ) = None
+        reviewed_proposal: CandidateProposalDraft | None = None
         candidate_rule: CandidateRuleSpecification | None = None
         backtest_request: BacktestRequest | None = None
         backtest_result: BacktestResult | None = None
@@ -222,7 +254,8 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                 context=self._model_context(request, "plan_data"),
             )
             research_plan = self._normalize_technical_research_plan(
-                research_plan
+                research_plan,
+                as_of_date=request.mandate.as_of_date,
             )
             self._validate_technical_research_plan(research_plan)
             data_request = self._build_data_request(request, research_plan)
@@ -277,12 +310,70 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
 
         try:
             series = self._technical_input_adapter.extract(data_response)
+            validation_split = self._resolve_validation_split(
+                request=request,
+                data_response=data_response,
+            )
+            benchmark_symbol = (self._benchmark_symbol or "").strip().upper()
+            benchmark_series = next(
+                (
+                    price_series
+                    for price_series in series
+                    if price_series.symbol.strip().upper() == benchmark_symbol
+                ),
+                None,
+            )
+            if benchmark_series is None:
+                raise ServiceContractError(
+                    "The Technical benchmark series is required to define "
+                    "the executable evaluation calendar."
+                )
+            evaluation_dates = {
+                bar.timestamp.date()
+                for bar in benchmark_series.bars
+                if validation_split.test_start_date
+                <= bar.timestamp.date()
+                <= validation_split.test_end_date
+            }
+            if not evaluation_dates:
+                raise ServiceContractError(
+                    "The Technical benchmark has no bars in the resolved "
+                    "evaluation window."
+                )
+            training_series = []
+            for price_series in series:
+                available_dates = {
+                    bar.timestamp.date() for bar in price_series.bars
+                }
+                if not evaluation_dates.issubset(available_dates):
+                    continue
+                training_bars = [
+                    bar
+                    for bar in price_series.bars
+                    if bar.timestamp.date()
+                    < validation_split.test_start_date
+                ]
+                if len(training_bars) < 5:
+                    continue
+                training_series.append(
+                    price_series.model_copy(
+                        update={
+                            "as_of_date": training_bars[-1].timestamp.date(),
+                            "bars": training_bars,
+                        }
+                    )
+                )
+            if not training_series:
+                raise ServiceContractError(
+                    "No ETF has both sufficient pre-evaluation Technical "
+                    "history and complete benchmark-calendar coverage."
+                )
             evidence_cutoff_date = max(
                 price_series.bars[-1].timestamp.date()
-                for price_series in series
+                for price_series in training_series
             )
             technical_analysis = self._technical_toolkit.analyze(
-                series=series,
+                series=training_series,
                 as_of_date=evidence_cutoff_date,
                 report_id=f"{request.lineage.task_id}.technical-analysis",
             )
@@ -290,16 +381,18 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                 technical_analysis,
                 resolve_technical_horizon(request.mandate),
             )
-            validation_split = self._resolve_validation_split(
-                request=request,
-                data_response=data_response,
-            )
-            candidate_prompt_report = compact_horizon_technical_report(
-                technical_analysis.model_dump(mode="json"),
-                max_assets=self._candidate_prompt_max_assets,
+            canonical_candidate_prompt_report = (
+                compact_horizon_technical_report(
+                    technical_analysis.model_dump(mode="json"),
+                    max_assets=self._candidate_prompt_max_assets,
+                )
             )
             candidate_prompt_scope = CandidatePromptScope.from_compacted_report(
-                candidate_prompt_report
+                canonical_candidate_prompt_report
+            )
+            candidate_prompt_report = build_opportunity_prompt_report(
+                canonical_candidate_prompt_report,
+                candidate_prompt_scope,
             )
         except asyncio.CancelledError:
             raise
@@ -320,7 +413,7 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                 raise ServiceContractError(
                     "Technical candidate prompt scope was not prepared."
                 )
-            initial_proposal = await self._generate_structured(
+            initial_prompt_proposal = await self._generate_structured(
                 system_prompt=self._system_prompt,
                 user_prompt=render_candidate_proposal(
                     mandate=request.mandate,
@@ -333,8 +426,13 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                     max_prompt_assets=self._candidate_prompt_max_assets,
                     candidate_prompt_report=candidate_prompt_report,
                 ),
-                response_model=CandidateProposalDraft,
+                response_model=OpportunityCandidateProposalDraft,
                 context=self._model_context(request, "propose_candidate"),
+            )
+            initial_proposal = (
+                candidate_prompt_scope.expand_opportunity_proposal(
+                    initial_prompt_proposal
+                )
             )
             self._validate_candidate_prompt_scope(
                 initial_proposal,
@@ -342,11 +440,11 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             )
             proposal = initial_proposal
             try:
-                reviewed_proposal = await self._generate_structured(
+                reviewed_prompt_proposal = await self._generate_structured(
                     system_prompt=self._system_prompt,
                     user_prompt=render_candidate_review(
                         mandate=request.mandate,
-                        initial_proposal=initial_proposal,
+                        initial_proposal=initial_prompt_proposal,
                         technical_analysis=technical_analysis,
                         lens_requirements=self._lens_requirements,
                         available_executors=(
@@ -357,8 +455,13 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                         max_prompt_assets=self._candidate_prompt_max_assets,
                         candidate_prompt_report=candidate_prompt_report,
                     ),
-                    response_model=CandidateProposalDraft,
+                    response_model=OpportunityCandidateProposalDraft,
                     context=self._model_context(request, "review_candidate"),
+                )
+                reviewed_proposal = (
+                    candidate_prompt_scope.expand_opportunity_proposal(
+                        reviewed_prompt_proposal
+                    )
                 )
                 (
                     proposal,
@@ -374,6 +477,18 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             except asyncio.CancelledError:
                 raise
             except Exception as review_exc:
+                self._record_candidate_diagnostic(
+                    request=request,
+                    stage="candidate_review",
+                    error=review_exc,
+                    raw_proposal=(
+                        reviewed_prompt_proposal
+                        if reviewed_prompt_proposal is not None
+                        else getattr(review_exc, "raw_payload", None)
+                    ),
+                    expanded_proposal=reviewed_proposal,
+                    scope=candidate_prompt_scope,
+                )
                 proposal = initial_proposal
                 review_failures.append(
                     TraderFailure(
@@ -381,7 +496,8 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                         message=(
                             "Second-pass Technical review was unavailable; "
                             "the validated initial proposal was retained. "
-                            f"{type(review_exc).__name__}: {review_exc}"
+                            f"{type(review_exc).__name__}: "
+                            f"{redact_opportunity_references(str(review_exc))}"
                         )[:1000],
                         retryable=True,
                     )
@@ -401,6 +517,14 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             except Exception as review_validation_exc:
                 if not candidate_review_applied:
                     raise
+                self._record_candidate_diagnostic(
+                    request=request,
+                    stage="candidate_review_validation",
+                    error=review_validation_exc,
+                    raw_proposal=reviewed_prompt_proposal,
+                    expanded_proposal=proposal,
+                    scope=candidate_prompt_scope,
+                )
                 review_failures.append(
                     TraderFailure(
                         stage="candidate_review_validation",
@@ -409,7 +533,7 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
                             "validation; the validated initial proposal was "
                             "retained. "
                             f"{type(review_validation_exc).__name__}: "
-                            f"{review_validation_exc}"
+                            f"{redact_opportunity_references(str(review_validation_exc))}"
                         )[:1000],
                         retryable=True,
                     )
@@ -427,10 +551,25 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            self._record_candidate_diagnostic(
+                request=request,
+                stage="candidate_proposal",
+                error=exc,
+                raw_proposal=(
+                    initial_prompt_proposal
+                    if initial_prompt_proposal is not None
+                    else getattr(exc, "raw_payload", None)
+                ),
+                expanded_proposal=initial_proposal,
+                scope=candidate_prompt_scope,
+            )
             return self._failure_package(
                 request,
                 stage="candidate_proposal",
-                exc=exc,
+                exc=ServiceContractError(
+                    redact_opportunity_references(str(exc))
+                    or type(exc).__name__
+                ),
                 retryable=True,
                 data_request=data_request,
                 data_response=data_response,
@@ -845,6 +984,44 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             task_id=request.lineage.task_id,
             attempt=request.lineage.attempt,
         )
+
+    def _record_candidate_diagnostic(
+        self,
+        *,
+        request: TraderTask,
+        stage: str,
+        error: Exception,
+        raw_proposal: Any,
+        expanded_proposal: Any,
+        scope: CandidatePromptScope | None,
+    ) -> None:
+        """Record parsed rejected drafts without affecting trader outcome."""
+
+        diagnostic = TechnicalCandidateDiagnostic(
+            diagnostic_id=(
+                f"{request.lineage.workflow_id}."
+                f"{request.lineage.task_id}.{stage}."
+                f"attempt-{request.lineage.attempt}"
+            ),
+            workflow_id=request.lineage.workflow_id,
+            task_id=request.lineage.task_id,
+            attempt=request.lineage.attempt,
+            stage=stage,
+            error_type=type(error).__name__,
+            error_message=str(error)[:4000] or type(error).__name__,
+            raw_proposal=proposal_payload(raw_proposal),
+            expanded_proposal=proposal_payload(expanded_proposal),
+            opportunity_catalog=(
+                scope.diagnostic_catalog() if scope is not None else []
+            ),
+        )
+        try:
+            self._diagnostics_sink.record(diagnostic)
+        except Exception as sink_error:
+            logger.warning(
+                "Technical candidate diagnostics sink failed: %s",
+                sink_error,
+            )
 
     def _build_data_request(
         self,
@@ -1467,7 +1644,7 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         specification = TECHNICAL_EXECUTOR_SPEC_BY_ID.get(executor_id)
         if executor_id == MULTI_ASSET_PORTFOLIO_EXECUTOR_ID:
             try:
-                portfolio = TechnicalPortfolioParameters.from_mapping(
+                portfolio = validate_technical_portfolio_parameters(
                     proposal.rule.parameters
                 )
             except ValueError as exc:
@@ -1683,8 +1860,10 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
     @staticmethod
     def _normalize_technical_research_plan(
         plan: TraderResearchPlanDraft,
+        *,
+        as_of_date: date,
     ) -> TraderResearchPlanDraft:
-        """Make core daily OHLC requirements code-owned and extras optional."""
+        """Make daily OHLC and full point-in-time coverage code-owned."""
 
         core_purposes = {
             "symbol": "Identify each ETF and keep observations asset-scoped.",
@@ -1740,7 +1919,10 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
         rationale_note = (
             "Code requires only symbol and daily OHLC chronology; volume, "
             "session, lifecycle, liquidity, and metadata fields are optional. "
-            "Unavailable optional evidence excludes dependent sleeve families."
+            "Unavailable optional evidence excludes dependent sleeve families. "
+            "The request runs through the mandate as-of date so code can "
+            "resolve the held-out calendar, then analysis is truncated "
+            "strictly before that window."
         )
         rationale = list(plan.rationale)
         if rationale_note not in rationale:
@@ -1752,6 +1934,8 @@ class StagedTraderAgent(BaseAgent[TraderTask, TraderStrategyPackage]):
             update={
                 "categories": categories,
                 "fields": normalized_fields,
+                "start_date": None,
+                "end_date": as_of_date,
                 "frequency": "daily",
                 "rationale": rationale,
             }

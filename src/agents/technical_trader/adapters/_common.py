@@ -10,9 +10,11 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from ..errors import StructuredOutputValidationError
 
-DEFAULT_PROVIDER_TIMEOUT_SECONDS = 18.0
-DEFAULT_PROVIDER_MAX_RETRIES = 1
+
+DEFAULT_PROVIDER_TIMEOUT_SECONDS = 90.0
+DEFAULT_PROVIDER_MAX_RETRIES = 0
 PROVIDER_DEADLINE_HEADROOM_SECONDS = 5.0
 
 
@@ -63,6 +65,39 @@ def response_schema(response_model: type[BaseModel]) -> dict[str, Any]:
     return response_model.model_json_schema(mode="validation")
 
 
+def strict_response_schema(response_model: type[BaseModel]) -> dict[str, Any]:
+    """Build a provider-strict schema and reject every open object node."""
+
+    schema = response_schema(response_model)
+
+    def close(node: Any, path: str) -> None:
+        if isinstance(node, list):
+            for index, child in enumerate(node):
+                close(child, f"{path}[{index}]")
+            return
+        if not isinstance(node, dict):
+            return
+        node.pop("default", None)
+        properties = node.get("properties")
+        is_object = node.get("type") == "object" or isinstance(
+            properties, dict
+        )
+        if is_object:
+            additional = node.get("additionalProperties")
+            if not isinstance(properties, dict) and additional is not False:
+                raise ValueError(
+                    f"Strict structured output forbids an open object at {path}."
+                )
+            node["additionalProperties"] = False
+            if isinstance(properties, dict):
+                node["required"] = list(properties)
+        for key, child in tuple(node.items()):
+            close(child, f"{path}.{key}")
+
+    close(schema, "$")
+    return schema
+
+
 def structured_json_instruction(response_model: type[BaseModel]) -> str:
     """Fallback instruction for providers running without native schemas."""
 
@@ -85,11 +120,20 @@ def validate_json_output(
             "have been refused or truncated."
         )
     try:
-        return response_model.model_validate_json(raw_text)
+        parsed = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise StructuredOutputValidationError(
+            f"{provider} returned invalid JSON for "
+            f"{response_model.__name__}: {exc}",
+            raw_payload={"unparsed_text": raw_text[:12_000]},
+        ) from exc
+    try:
+        return response_model.model_validate(parsed)
     except ValidationError as exc:
-        raise ValueError(
+        raise StructuredOutputValidationError(
             f"{provider} output failed {response_model.__name__} validation: "
-            f"{exc}"
+            f"{exc}",
+            raw_payload=parsed,
         ) from exc
 
 
@@ -124,6 +168,7 @@ __all__ = [
     "schema_name",
     "sdk_version",
     "structured_json_instruction",
+    "strict_response_schema",
     "total_tokens",
     "validate_json_output",
 ]

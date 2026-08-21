@@ -723,7 +723,12 @@ def dashboard() -> None:
             st.toggle(
                 "Run local live pilot",
                 key="run_live_pilot",
-                help="Runs the offline Fundamental, Quant, Risk, and Reporting workflow on this computer. Technical remains unavailable until a ModelClient is provided.",
+                help=(
+                    "Runs the offline three-trader, Risk, Reporting, PM, and "
+                    "Memory workflow on this computer. Technical uses the "
+                    "OpenAI or Anthropic settings in the environment; without "
+                    "them, that branch is clearly labeled as stubbed."
+                ),
             )
             can_start = bool(st.session_state.pm_mandate) and st.session_state.phase in {"idle", "completed"}
             if st.button("Start Research", type="primary", use_container_width=True, disabled=not can_start):
