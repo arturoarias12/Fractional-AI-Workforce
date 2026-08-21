@@ -45,6 +45,14 @@ Rules:
 2. Clearly report material Risk flags and critiques.
 3. Do not invent evidence, metrics, or conclusions.
 4. Do not select a winner or make the final portfolio decision.
+5. Format the memo with a short paragraph per candidate (separated by a
+   blank line), followed by a separate paragraph for risk disclosures.
+   Do not write it as a single dense block of text.
+6. The exact metrics (returns, Sharpe ratio, drawdown, trade counts) are
+   already shown in a separate comparison table. Do not restate raw
+   numbers in the memo. Instead, focus on what they mean: which candidate
+   looks stronger and why, notable strengths or weaknesses, and anything
+   a PM should know before deciding -- in plain, textual terms.
 """
 
 
