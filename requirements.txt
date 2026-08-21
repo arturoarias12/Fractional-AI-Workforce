@@ -1,0 +1,9 @@
+# Streamlit Community Cloud reads this file to build the app's environment.
+# Installs this repo itself (editable) plus every extra the full live-mode
+# loop needs - equivalent to the project's own documented
+# `pip install -e '.[full-demo,dev]'` step, plus the dashboard's own
+# streamlit pin and huggingface_hub for the offline-data bootstrap (see
+# dashboard/data_bootstrap.py).
+-e .[full-demo,dev]
+streamlit>=1.40,<2
+requests>=2.31,<3

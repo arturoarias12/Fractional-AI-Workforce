@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -16,7 +17,41 @@ from uuid import uuid4
 
 import streamlit as st
 
+from data_bootstrap import ensure_offline_data_present
 from workflow_adapter import load_dashboard_snapshot
+
+
+def _copy_secrets_into_environment() -> None:
+    """Copy configured Streamlit secrets into os.environ.
+
+    Streamlit Cloud (and other hosts using st.secrets) expose configured
+    secrets to *this* process via st.secrets, not as real environment
+    variables - so a child process started with subprocess.Popen (see
+    launch_live_research/launch_live_resume below) would not see them
+    otherwise. Local development, which already sets these via a real
+    .env file loaded by python-dotenv, is unaffected: setdefault never
+    overwrites a value already present in the environment. Best-effort -
+    st.secrets raises if no secrets are configured at all (e.g. running
+    locally with no secrets.toml), which is expected, not an error.
+    """
+    relevant_keys = (
+        "TECHNICAL_TRADER_MODEL_PROVIDER", "TECHNICAL_TRADER_MODEL",
+        "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY", "GEMINI_MODEL", "MODEL_PROVIDER", "MODEL_NAME",
+        "ETF_HISTORICAL_PRICES_URL", "ETF_INFO_URL",
+    )
+    try:
+        secrets = dict(st.secrets)
+    except Exception:
+        return
+    for key in relevant_keys:
+        value = secrets.get(key)
+        if value:
+            os.environ.setdefault(key, str(value))
+
+
+_copy_secrets_into_environment()
+ensure_offline_data_present()
 
 
 st.set_page_config(

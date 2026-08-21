@@ -100,6 +100,7 @@ from agents.risk_agent import RiskAgentImpl, make_risk_review_node  # noqa: E402
 from agents.reporting_agent import ReportingAgentImpl  # noqa: E402
 from protocols.reporting import ReportingRequest  # noqa: E402
 from dashboard.workflow_adapter import write_dashboard_snapshot  # noqa: E402
+from dashboard.data_bootstrap import ensure_offline_data_present  # noqa: E402
 from integration import WorkflowRunner  # noqa: E402
 from services.file_memory_store import FileBackedMemoryStore  # noqa: E402
 from protocols.research_contracts import MemoryRecord  # noqa: E402
@@ -294,6 +295,8 @@ OFFLINE_DATA_MAX_DATE = date.min
 
 def _initialize_offline_data() -> None:
     """Load team fixtures once, after CLI parsing and dependency checks."""
+
+    ensure_offline_data_present()
 
     global PANEL
     global OFFLINE_OHLC_ADJUSTMENTS_BY_SYMBOL
