@@ -114,9 +114,14 @@ st.markdown(
       /* Masthead: the app's own title, given real weight instead of a
          plain default st.title() */
       h1:first-of-type {
-        border-bottom: 3px solid var(--navy-dark);
-        padding-bottom: .5rem;
         margin-bottom: .3rem;
+      }
+
+      /* Streamlit's own platform toolbar (Deploy button + hamburger menu) -
+         not app content, hidden since it reads as a stray link near the
+         title on a page meant to look like a finished product. */
+      [data-testid="stToolbar"], [data-testid="stDecoration"] {
+        display: none;
       }
 
       /* The plain-language explainer every first-time visitor needs before
@@ -963,9 +968,7 @@ def _current_candidate_ticker(agent_id: str) -> str | None:
 
 
 def show_header() -> None:
-    title, action = st.columns([5, 1])
-    title.title("Fractional AI Workforce")
-    action.markdown("<div style='padding-top:1.1rem'>🟩 Live workflow</div>", unsafe_allow_html=True)
+    st.title("Fractional AI Workforce")
     st.markdown("<div class='demo-note'>PM workspace · Create a mandate, run the local research workflow, then review its exported state. Missing operational events remain N/A.</div>", unsafe_allow_html=True)
     if st.sidebar.button("Refresh live snapshot", use_container_width=True):
         st.rerun()
@@ -1021,6 +1024,121 @@ def dashboard() -> None:
     no_real_data_yet = not snapshot
     placeholder = "—"
 
+    st.subheader(f"Round {current_round:02d} · ETF Research")
+    mandate, controls = st.columns([4, 1])
+    with mandate:
+        st.markdown("#### Human PM Mandate")
+        if mandate_data:
+            st.write(f"**Objective:** {mandate_data.get('objective') or mandate_data.get('investment_objective') or 'N/A'}")
+            st.caption(
+                f"Risk tolerance: {mandate_data.get('risk') or mandate_data.get('risk_profile') or 'N/A'} "
+                f"· Time horizon: {mandate_data.get('time_horizon') or mandate_data.get('investment_horizon') or 'N/A'} "
+                f"· Constraints: {mandate_data.get('constraint') or mandate_data.get('constraints') or mandate_data.get('pm_notes') or 'N/A'}"
+            )
+        else:
+            st.info("No research request has been submitted. Create a PM Research Request to begin.")
+        if snapshot:
+            directive_notes = applied_mandate_notes(snapshot)
+            if directive_notes:
+                with st.expander("How the PM mandate affected this run", expanded=False):
+                    for note in directive_notes:
+                        st.write(f"• {note}")
+    with controls:
+        st.write("")
+        if st.button("Create PM Research Request", type="primary", use_container_width=True):
+            pm_request_dialog()
+        if snapshot:
+            st.caption("Latest run completed. Create a new PM request to begin another run.")
+        else:
+            st.caption(
+                "Runs the offline three-trader, Risk, Reporting, PM, and "
+                "Memory workflow on this computer. Technical uses the "
+                "OpenAI or Anthropic settings in the environment; without "
+                "them, that branch is clearly labeled as stubbed."
+            )
+            can_start = bool(st.session_state.pm_mandate) and st.session_state.phase in {"idle", "completed"}
+            if st.button("Start Research", type="primary", use_container_width=True, disabled=not can_start):
+                mandate_date = date.fromisoformat(
+                    st.session_state.pm_mandate["as_of_date"]
+                )
+                if mandate_date > OFFLINE_DATA_MAX_DATE:
+                    st.error(
+                        "This saved mandate requests data after the offline fixture ends. "
+                        "Create a new PM Research Request and choose the displayed maximum date."
+                    )
+                    return
+                try:
+                    st.session_state.live_process = launch_live_research(
+                        st.session_state.pm_mandate
+                    )
+                except OSError as error:
+                    st.error(f"Could not start the live workflow: {error}")
+                    return
+                st.session_state.phase = "running"
+                st.session_state.notice = "Live workflow started. Refresh the snapshot while it runs."
+                st.rerun()
+        # Visible here directly, not behind a separate tab - the report is
+        # the natural next PM action once the round settles.
+        report_ready = bool(snapshot.get("reporting")) if snapshot else st.session_state.phase == "completed"
+        if st.button("View Research Report", use_container_width=True, disabled=not report_ready):
+            st.session_state.view = "report"
+            st.rerun()
+
+    if not snapshot and st.session_state.pm_mandate:
+        with st.expander("Integration handoff · WorkflowInput", expanded=False):
+            st.caption(
+                "This is the schema-valid payload used by the local workflow runner when Live Pilot is selected. "
+                "In simulated demo mode it is shown for integration review only."
+            )
+            st.json(workflow_input_for_demo())
+
+    st.divider()
+    st.markdown("#### Research Workflow")
+    pm_col, trader_col, risk_col, report_col = st.columns([1.15, 1.45, 1.2, 1.2])
+    with pm_col:
+        st.markdown("<div class='workflow-middle-spacer'></div>", unsafe_allow_html=True)
+        pm_state = "Completed" if st.session_state.pm_mandate else "Idle"
+        workflow_box("PM Intake", "Human mandate", "Completed" if snapshot else pm_state)
+    with trader_col:
+        st.markdown("<div class='parallel-label'>PARALLEL RESEARCH BRANCHES</div>", unsafe_allow_html=True)
+        workflow_box("Technical Trader", "Independent branch", agents["technical"]["state"])
+        workflow_box("Fundamental Trader", "Independent branch", agents["fundamental"]["state"])
+        workflow_box("Quant Trader", "Independent branch", agents["quant"]["state"])
+    with risk_col:
+        st.markdown("<div class='workflow-middle-spacer'></div>", unsafe_allow_html=True)
+        workflow_box("Risk Review", "Fan-in after active traders", agents["risk"]["state"])
+    with report_col:
+        st.markdown("<div class='workflow-middle-spacer'></div>", unsafe_allow_html=True)
+        workflow_box("Reporting", "PM-facing memo", agents["reporting"]["state"])
+    st.caption("Technical, Fundamental, and Quant research run concurrently from the same PM mandate. Risk Review begins only after every active branch settles.")
+
+    st.markdown("#### Current Round Summary")
+    metric_cols = st.columns(4)
+    summary = snapshot.get("summary_metrics", {}) if snapshot else {}
+    metric_cols[0].metric(
+        "Research Completion Time",
+        placeholder if no_real_data_yet else
+        summary.get("research_completion_time") if snapshot else
+        ("6m 42s" if st.session_state.phase == "completed" else "In progress"),
+    )
+    total_cost = summary.get("total_api_cost") if snapshot else ("$1.13" if st.session_state.phase == "completed" else "$0.48")
+    metric_cols[1].metric(
+        "Total API Cost",
+        placeholder if no_real_data_yet else
+        (f"${total_cost}" if snapshot and total_cost != "N/A" else total_cost),
+    )
+    # Active Agents and Round Status are not fabricated demo numbers -
+    # they reflect the PM's real staffing choices and the workflow's
+    # real phase, so they're shown regardless of no_real_data_yet.
+    active = summary.get("active_agents") if snapshot else sum(status == "Active" for status in st.session_state.staffing.values())
+    metric_cols[2].metric("Active Agents", f"{active} / 5")
+    metric_cols[3].metric(
+        "Round Status",
+        workflow.get("status") if snapshot else st.session_state.phase.title(),
+    )
+    st.caption(metrics_disclaimer(snapshot))
+
+    st.divider()
     st.markdown(f"##### Round {current_round:02d} · Agent Workforce")
     st.caption(metrics_disclaimer(snapshot))
     for row in [["technical", "fundamental", "quant"], ["risk", "reporting"]]:
@@ -1049,153 +1167,33 @@ def dashboard() -> None:
                     st.rerun()
 
     st.divider()
-    run_tab, memory_tab = st.tabs(["▶ Run Research", "🗂 Memory & Decisions"])
-
-    with run_tab:
-        st.subheader(f"Round {current_round:02d} · ETF Research")
-        mandate, controls = st.columns([4, 1])
-        with mandate:
-            st.markdown("#### Human PM Mandate")
-            if mandate_data:
-                st.write(f"**Objective:** {mandate_data.get('objective') or mandate_data.get('investment_objective') or 'N/A'}")
-                st.caption(
-                    f"Risk tolerance: {mandate_data.get('risk') or mandate_data.get('risk_profile') or 'N/A'} "
-                    f"· Time horizon: {mandate_data.get('time_horizon') or mandate_data.get('investment_horizon') or 'N/A'} "
-                    f"· Constraints: {mandate_data.get('constraint') or mandate_data.get('constraints') or mandate_data.get('pm_notes') or 'N/A'}"
-                )
-            else:
-                st.info("No research request has been submitted. Create a PM Research Request to begin.")
-            if snapshot:
-                directive_notes = applied_mandate_notes(snapshot)
-                if directive_notes:
-                    with st.expander("How the PM mandate affected this run", expanded=False):
-                        for note in directive_notes:
-                            st.write(f"• {note}")
-        with controls:
-            st.write("")
-            if st.button("Create PM Research Request", type="primary", use_container_width=True):
-                pm_request_dialog()
-            if snapshot:
-                st.caption("Latest run completed. Create a new PM request to begin another run.")
-            else:
-                st.caption(
-                    "Runs the offline three-trader, Risk, Reporting, PM, and "
-                    "Memory workflow on this computer. Technical uses the "
-                    "OpenAI or Anthropic settings in the environment; without "
-                    "them, that branch is clearly labeled as stubbed."
-                )
-                can_start = bool(st.session_state.pm_mandate) and st.session_state.phase in {"idle", "completed"}
-                if st.button("Start Research", type="primary", use_container_width=True, disabled=not can_start):
-                    mandate_date = date.fromisoformat(
-                        st.session_state.pm_mandate["as_of_date"]
-                    )
-                    if mandate_date > OFFLINE_DATA_MAX_DATE:
-                        st.error(
-                            "This saved mandate requests data after the offline fixture ends. "
-                            "Create a new PM Research Request and choose the displayed maximum date."
-                        )
-                        return
-                    try:
-                        st.session_state.live_process = launch_live_research(
-                            st.session_state.pm_mandate
-                        )
-                    except OSError as error:
-                        st.error(f"Could not start the live workflow: {error}")
-                        return
-                    st.session_state.phase = "running"
-                    st.session_state.notice = "Live workflow started. Refresh the snapshot while it runs."
-                    st.rerun()
-
-        if not snapshot and st.session_state.pm_mandate:
-            with st.expander("Integration handoff · WorkflowInput", expanded=False):
-                st.caption(
-                    "This is the schema-valid payload used by the local workflow runner when Live Pilot is selected. "
-                    "In simulated demo mode it is shown for integration review only."
-                )
-                st.json(workflow_input_for_demo())
-
-        st.divider()
-        st.markdown("#### Research Workflow")
-        pm_col, trader_col, risk_col, report_col = st.columns([1.15, 1.45, 1.2, 1.2])
-        with pm_col:
-            st.markdown("<div class='workflow-middle-spacer'></div>", unsafe_allow_html=True)
-            pm_state = "Completed" if st.session_state.pm_mandate else "Idle"
-            workflow_box("PM Intake", "Human mandate", "Completed" if snapshot else pm_state)
-        with trader_col:
-            st.markdown("<div class='parallel-label'>PARALLEL RESEARCH BRANCHES</div>", unsafe_allow_html=True)
-            workflow_box("Technical Trader", "Independent branch", agents["technical"]["state"])
-            workflow_box("Fundamental Trader", "Independent branch", agents["fundamental"]["state"])
-            workflow_box("Quant Trader", "Independent branch", agents["quant"]["state"])
-        with risk_col:
-            st.markdown("<div class='workflow-middle-spacer'></div>", unsafe_allow_html=True)
-            workflow_box("Risk Review", "Fan-in after active traders", agents["risk"]["state"])
-        with report_col:
-            st.markdown("<div class='workflow-middle-spacer'></div>", unsafe_allow_html=True)
-            workflow_box("Reporting", "PM-facing memo", agents["reporting"]["state"])
-        st.caption("Technical, Fundamental, and Quant research run concurrently from the same PM mandate. Risk Review begins only after every active branch settles.")
-
-        st.markdown("#### Current Round Summary")
-        metric_cols = st.columns(4)
-        summary = snapshot.get("summary_metrics", {}) if snapshot else {}
-        metric_cols[0].metric(
-            "Research Completion Time",
-            placeholder if no_real_data_yet else
-            summary.get("research_completion_time") if snapshot else
-            ("6m 42s" if st.session_state.phase == "completed" else "In progress"),
-        )
-        total_cost = summary.get("total_api_cost") if snapshot else ("$1.13" if st.session_state.phase == "completed" else "$0.48")
-        metric_cols[1].metric(
-            "Total API Cost",
-            placeholder if no_real_data_yet else
-            (f"${total_cost}" if snapshot and total_cost != "N/A" else total_cost),
-        )
-        # Active Agents and Round Status are not fabricated demo numbers -
-        # they reflect the PM's real staffing choices and the workflow's
-        # real phase, so they're shown regardless of no_real_data_yet.
-        active = summary.get("active_agents") if snapshot else sum(status == "Active" for status in st.session_state.staffing.values())
-        metric_cols[2].metric("Active Agents", f"{active} / 5")
-        metric_cols[3].metric(
-            "Round Status",
-            workflow.get("status") if snapshot else st.session_state.phase.title(),
-        )
-        st.caption(metrics_disclaimer(snapshot))
-
-    with memory_tab:
-        left, right = st.columns([2, 1])
-        with left:
-            st.markdown("#### Recent Memory / Previous Lessons")
-            if snapshot:
-                memory = snapshot.get("memory", {})
-                context = memory.get("context") or {}
-                lessons = list(snapshot.get("mandate", {}).get("prior_round_lessons") or [])
-                # The runner stores a generic receipt for every PM decision. It is
-                # useful for auditing, but repeating it in the PM-facing Memory
-                # panel adds no decision context. Show only distinct, actionable
-                # lessons here.
-                context_lessons = [
-                    lesson for lesson in (context.get("lessons_for_next_round") or [])
-                    if lesson != "PM decision recorded from the live dashboard."
-                    and lesson not in lessons
-                ]
-                memory_entries = [
-                    f"Previous decision record: {memory.get('record_id') or 'loaded for this round'}",
-                    *[f"Next-round directive: {lesson}" for lesson in lessons],
-                    *[f"Saved lesson: {lesson}" for lesson in context_lessons],
-                ]
-                if len(memory_entries) == 1:
-                    memory_entries.append("No previous-round lessons have been recorded yet.")
-            else:
-                memory_entries = [
-                    "Live Memory will be available after this research round reaches PM review."
-                ]
-            for entry in memory_entries[:5]:
-                st.write(f"• {entry}")
-        with right:
-            st.markdown("#### PM Decision")
-            report_ready = bool(snapshot.get("reporting")) if snapshot else st.session_state.phase == "completed"
-            if st.button("View Research Report", type="primary", use_container_width=True, disabled=not report_ready):
-                st.session_state.view = "report"
-                st.rerun()
+    st.markdown("#### Recent Memory / Previous Lessons")
+    if snapshot:
+        memory = snapshot.get("memory", {})
+        context = memory.get("context") or {}
+        lessons = list(snapshot.get("mandate", {}).get("prior_round_lessons") or [])
+        # The runner stores a generic receipt for every PM decision. It is
+        # useful for auditing, but repeating it in the PM-facing Memory
+        # panel adds no decision context. Show only distinct, actionable
+        # lessons here.
+        context_lessons = [
+            lesson for lesson in (context.get("lessons_for_next_round") or [])
+            if lesson != "PM decision recorded from the live dashboard."
+            and lesson not in lessons
+        ]
+        memory_entries = [
+            f"Previous decision record: {memory.get('record_id') or 'loaded for this round'}",
+            *[f"Next-round directive: {lesson}" for lesson in lessons],
+            *[f"Saved lesson: {lesson}" for lesson in context_lessons],
+        ]
+        if len(memory_entries) == 1:
+            memory_entries.append("No previous-round lessons have been recorded yet.")
+    else:
+        memory_entries = [
+            "Live Memory will be available after this research round reaches PM review."
+        ]
+    for entry in memory_entries[:5]:
+        st.write(f"• {entry}")
 
 
 def agent_detail() -> None:
