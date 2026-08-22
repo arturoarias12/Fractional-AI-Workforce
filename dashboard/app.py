@@ -75,24 +75,109 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+
+      :root {
+        --ink: #0F1B2D;
+        --paper: #F6F7FA;
+        --navy: #1E3A5F;
+        --navy-dark: #142943;
+        --teal: #0F766E;
+        --teal-bg: #DCFCE7;
+        --amber: #B45309;
+        --amber-bg: #FEF3C7;
+        --red: #B91C1C;
+        --red-bg: #FEE2E2;
+        --slate: #E5E7EB;
+        --slate-ink: #374151;
+        --rule: #D8DEE9;
+        --muted: #64748B;
+      }
+
+      html, body, [class*="css"] {
+        font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+        color: var(--ink);
+      }
+      .stApp {background: var(--paper);}
       .block-container {max-width: 1400px; padding-top: 1.5rem;}
-      .status {border-radius: 999px; padding: .22rem .62rem; font-size: .82rem;
-               font-weight: 650; display: inline-block;}
-      .idle, .assigned {background:#e5e7eb; color:#374151;}
-      .running {background:#dbeafe; color:#1d4ed8;}
-      .waiting {background:#fef3c7; color:#92400e;}
-      .completed {background:#dcfce7; color:#166534;}
-      .failed, .vetoed {background:#fee2e2; color:#b91c1c;}
-      .workflow-box {border: 1px solid #dbe3ef; border-radius: 12px; padding: .7rem;
-                     text-align: center; min-height: 76px; background:#fff;}
-      .small-label {font-size:.76rem; color:#64748b; text-transform:uppercase;
-                    letter-spacing:.04em;}
-      .agent-name {font-size:1.1rem; font-weight:700;}
-      .demo-note {background:#eff6ff; color:#1e3a8a; border:1px solid #bfdbfe;
-                  border-radius:10px; padding:.7rem 1rem; margin-bottom:1rem;}
-      .parallel-label {font-size:.78rem; color:#64748b; text-align:center;
-                       margin-bottom:.35rem; font-weight:650;}
-      .workflow-middle-spacer {height:112px;}
+
+      h1, h2, h3 {
+        font-family: 'IBM Plex Sans', sans-serif;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        color: var(--navy-dark);
+      }
+
+      /* Masthead: the app's own title, given real weight instead of a
+         plain default st.title() */
+      h1:first-of-type {
+        border-bottom: 3px solid var(--navy-dark);
+        padding-bottom: .5rem;
+        margin-bottom: .3rem;
+      }
+
+      /* Status badges - the project's own signature element. State
+         tracking is the entire thesis of this system, so the badge that
+         shows an agent's current state gets consistent, terminal-style
+         treatment everywhere it appears, rather than a plain colored pill. */
+      .status {
+        border-radius: 4px; padding: .22rem .62rem; font-size: .74rem;
+        font-family: 'IBM Plex Mono', monospace; font-weight: 600;
+        letter-spacing: .04em; text-transform: uppercase;
+        display: inline-block; border: 1px solid transparent;
+      }
+      .idle, .assigned {background: var(--slate); color: var(--slate-ink); border-color: #CBD2DC;}
+      .running {background: #DBEAFE; color: var(--navy-dark); border-color: #BFDBFE;}
+      .waiting {background: var(--amber-bg); color: var(--amber); border-color: #FDE68A;}
+      .completed {background: var(--teal-bg); color: var(--teal); border-color: #A7F3D0;}
+      .failed, .vetoed {background: var(--red-bg); color: var(--red); border-color: #FECACA;}
+
+      .workflow-box {
+        border: 1px solid var(--rule); border-radius: 8px; padding: .8rem;
+        text-align: center; min-height: 76px; background: #fff;
+        box-shadow: 0 1px 2px rgba(15,27,45,.04);
+      }
+      .small-label {
+        font-family: 'IBM Plex Mono', monospace; font-size: .7rem;
+        color: var(--muted); text-transform: uppercase; letter-spacing: .06em;
+      }
+      .agent-name {font-size: 1.08rem; font-weight: 700; color: var(--navy-dark);}
+      .demo-note {
+        background: #EEF2F8; color: var(--navy-dark); border: 1px solid var(--rule);
+        border-left: 3px solid var(--navy); border-radius: 6px;
+        padding: .7rem 1rem; margin-bottom: 1rem; font-size: .92rem;
+      }
+      .parallel-label {
+        font-family: 'IBM Plex Mono', monospace; font-size: .72rem;
+        color: var(--muted); text-align: center; margin-bottom: .35rem;
+        font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+      }
+      .workflow-middle-spacer {height: 112px;}
+
+      /* All measured/reported figures (cost, latency, %) get monospace
+         treatment for real alignment, matching how trading terminals set
+         numerals - not decorative, this is the grounded typographic choice
+         for this subject. */
+      [data-testid="stMetricValue"] {
+        font-family: 'IBM Plex Mono', monospace; font-weight: 600;
+        color: var(--navy-dark); font-size: 1.6rem;
+      }
+      [data-testid="stMetricLabel"] {
+        font-family: 'IBM Plex Mono', monospace; font-size: .72rem;
+        text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+      }
+
+      .stButton > button[kind="primary"] {
+        background: var(--navy); border-color: var(--navy);
+        font-weight: 600;
+      }
+      .stButton > button[kind="primary"]:hover {
+        background: var(--navy-dark); border-color: var(--navy-dark);
+      }
+
+      [data-testid="stSidebar"] {
+        background: #FFFFFF; border-right: 1px solid var(--rule);
+      }
     </style>
     """,
     unsafe_allow_html=True,
