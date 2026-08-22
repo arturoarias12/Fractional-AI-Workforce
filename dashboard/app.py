@@ -1,7 +1,10 @@
 """Clickable Streamlit dashboard for the Fractional AI Workforce project.
 
-Interactive demo mode uses simulated data.  The local live-pilot mode sends a
-controlled PM mandate to the team's offline research-loop integration script.
+Sends a controlled PM mandate to the team's offline research-loop
+integration script and renders the real, exported result. There is no
+separate demo/simulated mode - see the removal note in show_header() for
+why (shared session state with the real workflow led to real crashes as
+the real workflow gained states the simulated mode never learned about).
 """
 
 from __future__ import annotations
@@ -447,23 +450,32 @@ def poll_live_research() -> tuple[str | None, str | None]:
 
 
 def make_agents(phase: str, staffing: dict[str, str] | None = None) -> dict[str, dict]:
-    """Return predictable simulated data for the professor demo."""
+    """Fallback agent view before any real snapshot exists for this round.
+
+    Only reached when there is genuinely no live snapshot yet (a fresh
+    mandate, or a round still running) - see current_agents() below.
+    """
     trader_states = {
         "idle": ("Idle", "Waiting for a research task"),
         "running": ("Running", "Analyze market evidence and draft a rule"),
         "completed": ("Completed", "Strategy package submitted to Risk Review"),
     }
-    state, task = trader_states[phase]
+    # .get() with a safe default rather than a bare lookup: phase can hold
+    # real-workflow-only values (e.g. "awaiting_decision") that this
+    # fallback view was never meant to render - a bare trader_states[phase]
+    # crashed with a real KeyError in production the one time this
+    # happened, rather than degrading gracefully.
+    state, task = trader_states.get(phase, trader_states["idle"])
     risk_state, risk_task = {
         "idle": ("Idle", "Waiting for trader results"),
         "running": ("Waiting for Review", "Waiting for all three trader packages"),
         "completed": ("Completed", "Review trader strategies for overfitting"),
-    }[phase]
+    }.get(phase, ("Idle", "Waiting for trader results"))
     report_state, report_task = {
         "idle": ("Idle", "Waiting for Risk approval"),
         "running": ("Assigned", "Waiting for approved research packages"),
         "completed": ("Completed", "Create PM-facing research memo"),
-    }[phase]
+    }.get(phase, ("Idle", "Waiting for Risk approval"))
 
     agents = {
         "technical": {
@@ -546,7 +558,7 @@ def init_state() -> None:
         "pm_mandate": None,
         "staffing": {key: "Active" for key in ["technical", "fundamental", "quant", "risk", "reporting"]},
         "memory": [],
-        "notice": "", "data_source": "Current workflow", "run_live_pilot": True,
+        "notice": "",
         "live_snapshot_ready": False, "live_process": None,
         "pending_pivot_lessons": [],
         "next_round_actions": {},
@@ -571,8 +583,6 @@ def status_badge(state: str) -> str:
 def snapshot_data() -> dict[str, Any] | None:
     """Return the latest graph snapshot for the main PM workspace."""
 
-    if st.session_state.data_source == "Interactive demo":
-        return None
     # A newly authored mandate is intentionally shown before it is sent to the
     # workflow, rather than being visually mixed with the prior run's result.
     if st.session_state.pm_mandate and not st.session_state.live_snapshot_ready:
@@ -634,14 +644,9 @@ def metrics_disclaimer(snapshot: dict[str, Any] | None) -> str:
             "Measured from this run's exported state. Success rate, API cost and "
             "retry counts stay N/A until the workflow emits operational events."
         )
-    if st.session_state.data_source == "Current workflow":
-        if st.session_state.phase == "idle":
-            return "No round has started yet. These figures will populate once a research request runs."
-        return "Waiting for the live run to produce a result. Use Refresh live snapshot to check again."
-    return (
-        ":red[Simulated demo data.] These productivity figures are illustrative "
-        "placeholders for interface rehearsal — nothing here was measured."
-    )
+    if st.session_state.phase == "idle":
+        return "No round has started yet. These figures will populate once a research request runs."
+    return "Waiting for the live run to produce a result. Use Refresh live snapshot to check again."
 
 
 def display_value(value: Any) -> None:
@@ -960,42 +965,10 @@ def _current_candidate_ticker(agent_id: str) -> str | None:
 def show_header() -> None:
     title, action = st.columns([5, 1])
     title.title("Fractional AI Workforce")
-    previous_data_source = st.session_state.data_source
-    selected = st.sidebar.radio(
-        "Workspace", ["Current workflow", "Interactive demo (click-through)"],
-        index=1 if st.session_state.data_source == "Interactive demo" else 0,
-        help="Current workflow combines PM intake with the latest graph-exported result. The simulated demo is retained only for click-through practice.",
-    )
-    st.session_state.data_source = (
-        "Interactive demo"
-        if selected == "Interactive demo (click-through)"
-        else "Current workflow"
-    )
-    # Round number and Memory are shared session state read by both modes -
-    # without this, switching into Interactive demo (which shows an
-    # illustrative Round 4 with fabricated prior-round memory entries, for
-    # click-through rehearsal) would leak that fake state into Current
-    # workflow when switching back, showing "Round 04" and invented memory
-    # before the PM has ever actually submitted a real mandate.
-    if st.session_state.data_source != previous_data_source:
-        if st.session_state.data_source == "Current workflow" and not st.session_state.pm_mandate:
-            st.session_state.round_number = 1
-            st.session_state.memory = []
-        elif st.session_state.data_source == "Interactive demo":
-            st.session_state.round_number = 4
-            st.session_state.memory = [
-                "Round 03 — Quant strategy required stronger out-of-sample validation.",
-                "Round 03 — Technical Trader had the highest completed-task success rate (92%).",
-            ]
-    if st.session_state.data_source == "Current workflow":
-        action.markdown("<div style='padding-top:1.1rem'>🟩 Current workflow</div>", unsafe_allow_html=True)
-        st.markdown("<div class='demo-note'>PM workspace · Create a mandate, run the local research workflow, then review its exported state. Missing operational events remain N/A.</div>", unsafe_allow_html=True)
-        if st.sidebar.button("Refresh live snapshot", use_container_width=True):
-            st.rerun()
-        st.sidebar.caption("Use the simulated demo only for a rehearsed click-through. The PM workspace is the main integration path.")
-    else:
-        action.markdown("<div style='padding-top:1.1rem'>🟦 Demo mode</div>", unsafe_allow_html=True)
-        st.markdown("<div class='demo-note'>Interactive demo · Workflow activity, metrics, and decisions use simulated data.</div>", unsafe_allow_html=True)
+    action.markdown("<div style='padding-top:1.1rem'>🟩 Live workflow</div>", unsafe_allow_html=True)
+    st.markdown("<div class='demo-note'>PM workspace · Create a mandate, run the local research workflow, then review its exported state. Missing operational events remain N/A.</div>", unsafe_allow_html=True)
+    if st.sidebar.button("Refresh live snapshot", use_container_width=True):
+        st.rerun()
     if st.session_state.notice:
         st.success(st.session_state.notice)
         st.session_state.notice = ""
@@ -1041,14 +1014,11 @@ def dashboard() -> None:
     workflow = snapshot.get("workflow", {}) if snapshot else {}
     mandate_data = snapshot.get("mandate", {}) if snapshot else (st.session_state.pm_mandate or {})
     current_round = workflow.get("round_number") or st.session_state.round_number
-    # Real Current workflow mode without a real snapshot yet - covers both
-    # "nothing submitted" (phase idle) and "submitted/running but the live
-    # subprocess hasn't produced a result yet" (phase running). The earlier
-    # fix only checked phase == "idle", so clicking Start Research moved
-    # phase to "running" and fell straight back through to Interactive
-    # demo's fabricated numbers ($0.48, 92%, etc.) even in real Current
-    # workflow mode - this is the actual, broader condition that was needed.
-    no_real_data_yet = st.session_state.data_source == "Current workflow" and not snapshot
+    # Real workflow without a real snapshot yet - covers both "nothing
+    # submitted" (phase idle) and "submitted/running but the live
+    # subprocess hasn't produced a result yet" (phase running). Prevents
+    # showing a fabricated number ($0.48, 92%, etc.) as if it were real.
+    no_real_data_yet = not snapshot
     placeholder = "—"
 
     st.markdown(f"##### Round {current_round:02d} · Agent Workforce")
@@ -1108,48 +1078,32 @@ def dashboard() -> None:
             if snapshot:
                 st.caption("Latest run completed. Create a new PM request to begin another run.")
             else:
-                st.toggle(
-                    "Run local live pilot",
-                    key="run_live_pilot",
-                    help=(
-                        "Runs the offline three-trader, Risk, Reporting, PM, and "
-                        "Memory workflow on this computer. Technical uses the "
-                        "OpenAI or Anthropic settings in the environment; without "
-                        "them, that branch is clearly labeled as stubbed."
-                    ),
+                st.caption(
+                    "Runs the offline three-trader, Risk, Reporting, PM, and "
+                    "Memory workflow on this computer. Technical uses the "
+                    "OpenAI or Anthropic settings in the environment; without "
+                    "them, that branch is clearly labeled as stubbed."
                 )
                 can_start = bool(st.session_state.pm_mandate) and st.session_state.phase in {"idle", "completed"}
                 if st.button("Start Research", type="primary", use_container_width=True, disabled=not can_start):
-                    if st.session_state.run_live_pilot:
-                        mandate_date = date.fromisoformat(
-                            st.session_state.pm_mandate["as_of_date"]
+                    mandate_date = date.fromisoformat(
+                        st.session_state.pm_mandate["as_of_date"]
+                    )
+                    if mandate_date > OFFLINE_DATA_MAX_DATE:
+                        st.error(
+                            "This saved mandate requests data after the offline fixture ends. "
+                            "Create a new PM Research Request and choose the displayed maximum date."
                         )
-                        if mandate_date > OFFLINE_DATA_MAX_DATE:
-                            st.error(
-                                "This saved mandate requests data after the offline fixture ends. "
-                                "Create a new PM Research Request and choose the displayed maximum date."
-                            )
-                            return
-                        try:
-                            st.session_state.live_process = launch_live_research(
-                                st.session_state.pm_mandate
-                            )
-                        except OSError as error:
-                            st.error(f"Could not start the live workflow: {error}")
-                            return
-                        st.session_state.data_source = "Current workflow"
-                        st.session_state.phase = "running"
-                        st.session_state.notice = "Live workflow started. Refresh the snapshot while it runs."
-                        st.rerun()
+                        return
+                    try:
+                        st.session_state.live_process = launch_live_research(
+                            st.session_state.pm_mandate
+                        )
+                    except OSError as error:
+                        st.error(f"Could not start the live workflow: {error}")
+                        return
                     st.session_state.phase = "running"
-                    st.session_state.pm_decision = None
-                    active_agents = [name for name, status in st.session_state.staffing.items() if status == "Active"]
-                    st.session_state.memory.insert(0, f"PM submitted a research mandate for Round {current_round:02d}.")
-                    st.session_state.notice = f"Round {current_round:02d} is running. Active workforce: {len(active_agents)} agents."
-                    st.rerun()
-                if st.button("Advance Demo to Completed Review", use_container_width=True, disabled=st.session_state.phase == "idle"):
-                    st.session_state.phase = "completed"
-                    st.session_state.notice = "Simulated research round completed; Risk review and report are ready."
+                    st.session_state.notice = "Live workflow started. Refresh the snapshot while it runs."
                     st.rerun()
 
         if not snapshot and st.session_state.pm_mandate:
@@ -1231,12 +1185,9 @@ def dashboard() -> None:
                 if len(memory_entries) == 1:
                     memory_entries.append("No previous-round lessons have been recorded yet.")
             else:
-                if st.session_state.data_source == "Current workflow":
-                    memory_entries = [
-                        "Live Memory will be available after this research round reaches PM review."
-                    ]
-                else:
-                    memory_entries = st.session_state.memory
+                memory_entries = [
+                    "Live Memory will be available after this research round reaches PM review."
+                ]
             for entry in memory_entries[:5]:
                 st.write(f"• {entry}")
         with right:
@@ -1253,6 +1204,8 @@ def agent_detail() -> None:
     agents = current_agents(snapshot)
     agent_id = st.session_state.selected_agent
     agent = agents[agent_id]
+    no_real_data_yet = not snapshot
+    placeholder = "—"
     if st.button("← Back to Dashboard"):
         st.session_state.view = "dashboard"
         st.rerun()
@@ -1282,27 +1235,29 @@ def agent_detail() -> None:
         elif snapshot and agent_id == "reporting":
             candidates = snapshot.get("reporting", {}).get("comparison", {}).get("candidates", [])
             st.write(f"Compared {len(candidates)} Risk-approved candidate(s) for PM review.")
+        elif no_real_data_yet:
+            st.caption("Nothing to show yet - this agent hasn't produced a result for the current round.")
         else:
             st.write(agent_value(agent, "output"))
         times = st.columns(2)
-        times[0].markdown(f"**Start Time**  \n{agent_value(agent, 'start_time')}")
-        times[1].markdown(f"**End Time**  \n{agent_value(agent, 'end_time')}")
-        st.markdown(f"**Next Step**  \n{agent_value(agent, 'next_step')}")
-        st.markdown(f"**Error Message**  \n{agent_value(agent, 'error_message')}")
+        times[0].markdown(f"**Start Time**  \n{placeholder if no_real_data_yet else agent_value(agent, 'start_time')}")
+        times[1].markdown(f"**End Time**  \n{placeholder if no_real_data_yet else agent_value(agent, 'end_time')}")
+        st.markdown(f"**Next Step**  \n{placeholder if no_real_data_yet else agent_value(agent, 'next_step')}")
+        st.markdown(f"**Error Message**  \n{placeholder if no_real_data_yet else agent_value(agent, 'error_message')}")
     with metrics:
         st.subheader("Productivity Metrics")
-        st.metric("Task Completion Time", agent_value(agent, "task_completion_time"))
-        st.metric("Success Rate", agent_value(agent, "success_rate"))
-        st.metric("API Cost", agent_value(agent, "api_cost"))
-        st.metric("Retry Count", agent_value(agent, "retry_count"))
-        st.metric("Failed Count", agent_value(agent, "failed_count"))
+        st.metric("Task Completion Time", placeholder if no_real_data_yet else agent_value(agent, "task_completion_time"))
+        st.metric("Success Rate", placeholder if no_real_data_yet else agent_value(agent, "success_rate"))
+        st.metric("API Cost", placeholder if no_real_data_yet else agent_value(agent, "api_cost"))
+        st.metric("Retry Count", placeholder if no_real_data_yet else agent_value(agent, "retry_count"))
+        st.metric("Failed Count", placeholder if no_real_data_yet else agent_value(agent, "failed_count"))
         st.caption(metrics_disclaimer(snapshot))
 
     st.divider()
     if snapshot:
         with st.expander("Technical details · exported agent data"):
             st.json(agent)
-    else:
+    elif not no_real_data_yet:
         st.subheader("Risk Feedback")
         st.info(agent["risk_feedback"])
     st.subheader("Staffing Actions")
