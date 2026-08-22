@@ -634,8 +634,10 @@ def metrics_disclaimer(snapshot: dict[str, Any] | None) -> str:
             "Measured from this run's exported state. Success rate, API cost and "
             "retry counts stay N/A until the workflow emits operational events."
         )
-    if st.session_state.data_source == "Current workflow" and st.session_state.phase == "idle":
-        return "No round has started yet. These figures will populate once a research request runs."
+    if st.session_state.data_source == "Current workflow":
+        if st.session_state.phase == "idle":
+            return "No round has started yet. These figures will populate once a research request runs."
+        return "Waiting for the live run to produce a result. Use Refresh live snapshot to check again."
     return (
         ":red[Simulated demo data.] These productivity figures are illustrative "
         "placeholders for interface rehearsal — nothing here was measured."
@@ -1039,12 +1041,14 @@ def dashboard() -> None:
     workflow = snapshot.get("workflow", {}) if snapshot else {}
     mandate_data = snapshot.get("mandate", {}) if snapshot else (st.session_state.pm_mandate or {})
     current_round = workflow.get("round_number") or st.session_state.round_number
-    # Real Current workflow mode, before anything has actually been
-    # submitted, previously fell through to the same illustrative numbers
-    # Interactive demo mode uses - confusing, since it looks like a
-    # measurement rather than an empty state. Used below by both the Agent
-    # Workforce cards and the Current Round Summary metrics.
-    nothing_started_yet = st.session_state.data_source == "Current workflow" and st.session_state.phase == "idle"
+    # Real Current workflow mode without a real snapshot yet - covers both
+    # "nothing submitted" (phase idle) and "submitted/running but the live
+    # subprocess hasn't produced a result yet" (phase running). The earlier
+    # fix only checked phase == "idle", so clicking Start Research moved
+    # phase to "running" and fell straight back through to Interactive
+    # demo's fabricated numbers ($0.48, 92%, etc.) even in real Current
+    # workflow mode - this is the actual, broader condition that was needed.
+    no_real_data_yet = st.session_state.data_source == "Current workflow" and not snapshot
     placeholder = "—"
 
     st.markdown(f"##### Round {current_round:02d} · Agent Workforce")
@@ -1063,11 +1067,11 @@ def dashboard() -> None:
                 st.caption(agent["role"])
                 st.write(f"**Current task:** {agent['task']}")
                 a, b = st.columns(2)
-                a.caption(f"Success rate\n\n**{placeholder if nothing_started_yet else agent_value(agent, 'success_rate')}**")
-                b.caption(f"Completion time\n\n**{placeholder if nothing_started_yet else agent_value(agent, 'task_completion_time')}**")
+                a.caption(f"Success rate\n\n**{placeholder if no_real_data_yet else agent_value(agent, 'success_rate')}**")
+                b.caption(f"Completion time\n\n**{placeholder if no_real_data_yet else agent_value(agent, 'task_completion_time')}**")
                 c, d = st.columns(2)
-                c.caption(f"API cost\n\n**{placeholder if nothing_started_yet else agent_value(agent, 'api_cost')}**")
-                retries_failed_text = placeholder if nothing_started_yet else f"{agent_value(agent, 'retry_count')} / {agent_value(agent, 'failed_count')}"
+                c.caption(f"API cost\n\n**{placeholder if no_real_data_yet else agent_value(agent, 'api_cost')}**")
+                retries_failed_text = placeholder if no_real_data_yet else f"{agent_value(agent, 'retry_count')} / {agent_value(agent, 'failed_count')}"
                 d.caption(f"Retries / Failed\n\n**{retries_failed_text}**")
                 if st.button("View Agent Detail", key=f"view-{agent_id}", use_container_width=True):
                     st.session_state.selected_agent = agent_id
@@ -1181,22 +1185,24 @@ def dashboard() -> None:
         summary = snapshot.get("summary_metrics", {}) if snapshot else {}
         metric_cols[0].metric(
             "Research Completion Time",
-            placeholder if nothing_started_yet else
+            placeholder if no_real_data_yet else
             summary.get("research_completion_time") if snapshot else
             ("6m 42s" if st.session_state.phase == "completed" else "In progress"),
         )
         total_cost = summary.get("total_api_cost") if snapshot else ("$1.13" if st.session_state.phase == "completed" else "$0.48")
         metric_cols[1].metric(
             "Total API Cost",
-            placeholder if nothing_started_yet else
+            placeholder if no_real_data_yet else
             (f"${total_cost}" if snapshot and total_cost != "N/A" else total_cost),
         )
+        # Active Agents and Round Status are not fabricated demo numbers -
+        # they reflect the PM's real staffing choices and the workflow's
+        # real phase, so they're shown regardless of no_real_data_yet.
         active = summary.get("active_agents") if snapshot else sum(status == "Active" for status in st.session_state.staffing.values())
-        metric_cols[2].metric("Active Agents", placeholder if nothing_started_yet else f"{active} / 5")
+        metric_cols[2].metric("Active Agents", f"{active} / 5")
         metric_cols[3].metric(
             "Round Status",
-            "Not started" if nothing_started_yet else
-            (workflow.get("status") if snapshot else st.session_state.phase.title()),
+            workflow.get("status") if snapshot else st.session_state.phase.title(),
         )
         st.caption(metrics_disclaimer(snapshot))
 
