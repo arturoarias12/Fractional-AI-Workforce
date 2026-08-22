@@ -174,6 +174,11 @@ st.markdown(
       .stButton > button[kind="primary"]:hover {
         background: var(--navy-dark); border-color: var(--navy-dark);
       }
+      .stButton > button[kind="primary"]:disabled,
+      .stButton > button[kind="primary"]:disabled:hover {
+        background: var(--slate); border-color: #CBD2DC; color: var(--slate-ink);
+        opacity: 1;
+      }
 
       [data-testid="stSidebar"] {
         background: #FFFFFF; border-right: 1px solid var(--rule);
@@ -524,13 +529,10 @@ def make_agents(phase: str, staffing: dict[str, str] | None = None) -> dict[str,
 def init_state() -> None:
     defaults = {
         "view": "dashboard", "selected_agent": "technical", "phase": "idle",
-        "round_number": 4, "pm_decision": None,
+        "round_number": 1, "pm_decision": None,
         "pm_mandate": None,
         "staffing": {key: "Active" for key in ["technical", "fundamental", "quant", "risk", "reporting"]},
-        "memory": [
-            "Round 03 — Quant strategy required stronger out-of-sample validation.",
-            "Round 03 — Technical Trader had the highest completed-task success rate (92%).",
-        ],
+        "memory": [],
         "notice": "", "data_source": "Current workflow", "run_live_pilot": True,
         "live_snapshot_ready": False, "live_process": None,
         "pending_pivot_lessons": [],
@@ -619,6 +621,8 @@ def metrics_disclaimer(snapshot: dict[str, Any] | None) -> str:
             "Measured from this run's exported state. Success rate, API cost and "
             "retry counts stay N/A until the workflow emits operational events."
         )
+    if st.session_state.data_source == "Current workflow" and st.session_state.phase == "idle":
+        return "No round has started yet. These figures will populate once a research request runs."
     return (
         ":red[Simulated demo data.] These productivity figures are illustrative "
         "placeholders for interface rehearsal — nothing here was measured."
@@ -941,6 +945,7 @@ def _current_candidate_ticker(agent_id: str) -> str | None:
 def show_header() -> None:
     title, action = st.columns([5, 1])
     title.title("Fractional AI Workforce")
+    previous_data_source = st.session_state.data_source
     selected = st.sidebar.radio(
         "Workspace", ["Current workflow", "Interactive demo (click-through)"],
         index=1 if st.session_state.data_source == "Interactive demo" else 0,
@@ -951,6 +956,22 @@ def show_header() -> None:
         if selected == "Interactive demo (click-through)"
         else "Current workflow"
     )
+    # Round number and Memory are shared session state read by both modes -
+    # without this, switching into Interactive demo (which shows an
+    # illustrative Round 4 with fabricated prior-round memory entries, for
+    # click-through rehearsal) would leak that fake state into Current
+    # workflow when switching back, showing "Round 04" and invented memory
+    # before the PM has ever actually submitted a real mandate.
+    if st.session_state.data_source != previous_data_source:
+        if st.session_state.data_source == "Current workflow" and not st.session_state.pm_mandate:
+            st.session_state.round_number = 1
+            st.session_state.memory = []
+        elif st.session_state.data_source == "Interactive demo":
+            st.session_state.round_number = 4
+            st.session_state.memory = [
+                "Round 03 — Quant strategy required stronger out-of-sample validation.",
+                "Round 03 — Technical Trader had the highest completed-task success rate (92%).",
+            ]
     if st.session_state.data_source == "Current workflow":
         action.markdown("<div style='padding-top:1.1rem'>🟩 Current workflow</div>", unsafe_allow_html=True)
         st.markdown("<div class='demo-note'>PM workspace · Create a mandate, run the local research workflow, then review its exported state. Missing operational events remain N/A.</div>", unsafe_allow_html=True)
@@ -1089,12 +1110,33 @@ def dashboard() -> None:
     st.markdown("#### Current Round Summary")
     metric_cols = st.columns(4)
     summary = snapshot.get("summary_metrics", {}) if snapshot else {}
-    metric_cols[0].metric("Research Completion Time", summary.get("research_completion_time") if snapshot else ("6m 42s" if st.session_state.phase == "completed" else "In progress"))
+    # Real Current workflow mode, before anything has actually been
+    # submitted, previously fell through to the same illustrative numbers
+    # Interactive demo mode uses ($0.48, 5 / 5, etc.) - confusing, since it
+    # looks like a measurement rather than an empty state. Show a plain "-"
+    # instead in that specific case; Interactive demo mode and Current
+    # workflow's own running/completed progress indicators are unchanged.
+    nothing_started_yet = st.session_state.data_source == "Current workflow" and st.session_state.phase == "idle"
+    placeholder = "—"
+    metric_cols[0].metric(
+        "Research Completion Time",
+        placeholder if nothing_started_yet else
+        summary.get("research_completion_time") if snapshot else
+        ("6m 42s" if st.session_state.phase == "completed" else "In progress"),
+    )
     total_cost = summary.get("total_api_cost") if snapshot else ("$1.13" if st.session_state.phase == "completed" else "$0.48")
-    metric_cols[1].metric("Total API Cost", f"${total_cost}" if snapshot and total_cost != "N/A" else total_cost)
+    metric_cols[1].metric(
+        "Total API Cost",
+        placeholder if nothing_started_yet else
+        (f"${total_cost}" if snapshot and total_cost != "N/A" else total_cost),
+    )
     active = summary.get("active_agents") if snapshot else sum(status == "Active" for status in st.session_state.staffing.values())
-    metric_cols[2].metric("Active Agents", f"{active} / 5")
-    metric_cols[3].metric("Round Status", workflow.get("status") if snapshot else st.session_state.phase.title())
+    metric_cols[2].metric("Active Agents", placeholder if nothing_started_yet else f"{active} / 5")
+    metric_cols[3].metric(
+        "Round Status",
+        "Not started" if nothing_started_yet else
+        (workflow.get("status") if snapshot else st.session_state.phase.title()),
+    )
     st.caption(metrics_disclaimer(snapshot))
 
     st.divider()
