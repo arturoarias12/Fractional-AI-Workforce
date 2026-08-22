@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 from typing import Any
 from uuid import uuid4
 
@@ -969,9 +970,7 @@ def _current_candidate_ticker(agent_id: str) -> str | None:
 
 def show_header() -> None:
     st.title("Fractional AI Workforce")
-    st.markdown("<div class='demo-note'>PM workspace · Create a mandate, run the local research workflow, then review its exported state. Missing operational events remain N/A.</div>", unsafe_allow_html=True)
-    if st.sidebar.button("Refresh live snapshot", use_container_width=True):
-        st.rerun()
+    st.markdown("<div class='demo-note'>Create a research request below, run it, then review the real results. Some figures show as N/A until the system actually has data to report.</div>", unsafe_allow_html=True)
     if st.session_state.notice:
         st.success(st.session_state.notice)
         st.session_state.notice = ""
@@ -1005,9 +1004,9 @@ def dashboard() -> None:
     )
     live_run_state, live_run_message = poll_live_research()
     if live_run_state == "running":
-        st.warning(
-            "Local research workflow is running. Use **Refresh live snapshot** to view the latest exported checkpoint; the final review will appear when the run finishes."
-        )
+        st.info("Research is running. This page updates automatically — no need to refresh.")
+        time.sleep(4)
+        st.rerun()
     elif live_run_state == "completed":
         st.success(live_run_message)
     elif live_run_state == "failed":
@@ -1026,11 +1025,12 @@ def dashboard() -> None:
 
     st.subheader(f"Round {current_round:02d} · ETF Research")
     st.caption(
-        "A research loop can run up to 3 consecutive rounds (Risk's own "
-        "validation-touch budget caps it there). After a round completes, "
-        "open **View Research Report** and choose Select, Reject, or "
-        "**Request Another Round** to continue - each further round starts "
-        "with this workflow's real prior-round Memory, not a blank slate."
+        "You can run up to 3 rounds total — this limit exists so the team "
+        "can't just keep re-testing the same data until something looks "
+        "good by chance. Once a round finishes, open **View Research "
+        "Report** and choose to Select a strategy, Reject it, or "
+        "**Request Another Round**. Each new round remembers what happened "
+        "before — it doesn't start from scratch."
     )
     mandate, controls = st.columns([4, 1])
     with mandate:
@@ -1055,13 +1055,13 @@ def dashboard() -> None:
         if st.button("Create PM Research Request", type="primary", use_container_width=True):
             pm_request_dialog()
         if snapshot:
-            st.caption("Latest run completed. Create a new PM request to begin another run.")
+            st.caption("This round is complete. Create a new request to start another.")
         else:
             st.caption(
-                "Runs the offline three-trader, Risk, Reporting, PM, and "
-                "Memory workflow on this computer. Technical uses the "
-                "OpenAI or Anthropic settings in the environment; without "
-                "them, that branch is clearly labeled as stubbed."
+                "Runs the real system: all three trader agents, Risk "
+                "review, and the Reporting agent. Technical Trader uses a "
+                "real AI model if one is configured for this deployment; "
+                "otherwise it's clearly marked as unavailable for this run."
             )
             can_start = bool(st.session_state.pm_mandate) and st.session_state.phase in {"idle", "completed"}
             if st.button("Start Research", type="primary", use_container_width=True, disabled=not can_start):
@@ -1108,16 +1108,31 @@ def dashboard() -> None:
         workflow_box("PM Intake", "Human mandate", "Completed" if snapshot else pm_state)
     with trader_col:
         st.markdown("<div class='parallel-label'>PARALLEL RESEARCH BRANCHES</div>", unsafe_allow_html=True)
-        workflow_box("Technical Trader", "Independent branch", agents["technical"]["state"])
-        workflow_box("Fundamental Trader", "Independent branch", agents["fundamental"]["state"])
-        workflow_box("Quant Trader", "Independent branch", agents["quant"]["state"])
+        for trader_id, trader_label in (
+            ("technical", "Technical Trader"),
+            ("fundamental", "Fundamental Trader"),
+            ("quant", "Quant Trader"),
+        ):
+            workflow_box(trader_label, "Independent branch", agents[trader_id]["state"])
+            # Same staffing-availability condition as the Agent Workforce
+            # cards below and agent_detail() itself - only a real, clickable
+            # action when it would actually do something.
+            staffing_actionable = (
+                (snapshot and workflow.get("status") == "Waiting for PM Decision")
+                or (not snapshot and st.session_state.phase == "completed")
+            )
+            if staffing_actionable:
+                if st.button("Hire / Bench / Pivot", key=f"workflow-staff-{trader_id}", use_container_width=True):
+                    st.session_state.selected_agent = trader_id
+                    st.session_state.view = "detail"
+                    st.rerun()
     with risk_col:
         st.markdown("<div class='workflow-middle-spacer'></div>", unsafe_allow_html=True)
-        workflow_box("Risk Review", "Fan-in after active traders", agents["risk"]["state"])
+        workflow_box("Risk Review", "Reviews all traders' work", agents["risk"]["state"])
     with report_col:
         st.markdown("<div class='workflow-middle-spacer'></div>", unsafe_allow_html=True)
         workflow_box("Reporting", "PM-facing memo", agents["reporting"]["state"])
-    st.caption("Technical, Fundamental, and Quant research run concurrently from the same PM mandate. Risk Review begins only after every active branch settles.")
+    st.caption("Technical, Fundamental, and Quant Trader all work at the same time on the same request. Risk Review starts only once all three finish.")
 
     st.markdown("#### Current Round Summary")
     metric_cols = st.columns(4)
