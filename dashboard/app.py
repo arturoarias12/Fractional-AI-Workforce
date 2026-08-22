@@ -1025,6 +1025,13 @@ def dashboard() -> None:
     placeholder = "—"
 
     st.subheader(f"Round {current_round:02d} · ETF Research")
+    st.caption(
+        "A research loop can run up to 3 consecutive rounds (Risk's own "
+        "validation-touch budget caps it there). After a round completes, "
+        "open **View Research Report** and choose Select, Reject, or "
+        "**Request Another Round** to continue - each further round starts "
+        "with this workflow's real prior-round Memory, not a blank slate."
+    )
     mandate, controls = st.columns([4, 1])
     with mandate:
         st.markdown("#### Human PM Mandate")
@@ -1151,7 +1158,21 @@ def dashboard() -> None:
                     if snapshot and workflow.get("status") == "Waiting for PM Decision"
                     else agent.get("staffing_status") if snapshot else st.session_state.staffing[agent_id]
                 )
+                # Mirrors agent_detail()'s exact staffing-availability check,
+                # so this hint only appears when the real Hire/Bench/Pivot
+                # controls (on that page) are actually usable - previously
+                # this was only discoverable by clicking into an agent.
+                staffing_actionable = agent_id in {"technical", "fundamental", "quant"} and (
+                    (snapshot and workflow.get("status") == "Waiting for PM Decision")
+                    or (not snapshot and st.session_state.phase == "completed")
+                )
                 st.markdown(f"<div class='agent-name'>{agent['name']}</div>{status_badge(agent['state'])} &nbsp; <span style='font-size:.85rem'>Next round: {staffing_status}</span>", unsafe_allow_html=True)
+                if staffing_actionable:
+                    st.markdown(
+                        "<div style='color:var(--teal); font-size:.82rem; font-weight:600; margin:.2rem 0;'>"
+                        "🔧 Staffing available — Hire, Bench, or Pivot on the detail page below</div>",
+                        unsafe_allow_html=True,
+                    )
                 st.caption(agent["role"])
                 st.write(f"**Current task:** {agent['task']}")
                 a, b = st.columns(2)
