@@ -163,7 +163,7 @@ st.markdown(
         font-family: 'IBM Plex Mono', monospace; font-size: .7rem;
         color: var(--muted); text-transform: uppercase; letter-spacing: .06em;
       }
-      .agent-name {font-size: 1.08rem; font-weight: 700; color: var(--navy-dark);}
+      .agent-name {font-size: 1.02rem; font-weight: 700; color: var(--navy-dark); margin-bottom: .1rem;}
       .demo-note {
         background: #EEF2F8; color: var(--navy-dark); border: 1px solid var(--rule);
         border-left: 3px solid var(--navy); border-radius: 6px;
@@ -187,6 +187,13 @@ st.markdown(
       [data-testid="stMetricLabel"] {
         font-family: 'IBM Plex Mono', monospace; font-size: .72rem;
         text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+      }
+      /* Streamlit's default metric container has generous vertical
+         padding that adds up fast in a stacked column (Productivity
+         Metrics on the agent detail page) - tightened so five metrics
+         fit without excess scrolling. */
+      [data-testid="stMetric"] {
+        padding: .25rem 0;
       }
 
       .stButton > button[kind="primary"] {
@@ -455,6 +462,35 @@ def poll_live_research() -> tuple[str | None, str | None]:
     return "failed", detail
 
 
+@st.fragment(run_every="4s")
+def _live_run_status_fragment() -> None:
+    """Auto-refreshing live-run status banner.
+
+    Only this small fragment re-renders on its own timer - not the whole
+    page - so checking on a multi-minute run doesn't require a manual
+    click. A full-page st.rerun() only fires once the run genuinely
+    finishes (completed/failed/awaiting a decision), when the rest of the
+    page actually has something new to show; while still "running", the
+    fragment just quietly re-polls itself every 4 seconds.
+
+    An earlier version called time.sleep() + a full st.rerun() on every
+    tick, which visibly dimmed and duplicated the whole page every few
+    seconds (Streamlit shows a "script is running" overlay across the
+    entire app during any blocking full-page rerun, not just this one
+    banner) - reported directly against the live deployment. Fragments
+    avoid this because only the fragment's own output re-renders.
+    """
+    live_run_state, live_run_message = poll_live_research()
+    if live_run_state == "running":
+        st.info("Research is running. This updates automatically every few seconds.")
+    elif live_run_state == "completed":
+        st.success(live_run_message)
+        st.rerun()
+    elif live_run_state == "failed":
+        st.error(f"Live workflow did not complete: {live_run_message}")
+        st.rerun()
+
+
 def make_agents(phase: str, staffing: dict[str, str] | None = None) -> dict[str, dict]:
     """Fallback agent view before any real snapshot exists for this round.
 
@@ -624,6 +660,19 @@ def effective_staffing(snapshot: dict[str, Any] | None = None) -> dict[str, str]
 
 def current_agents(snapshot: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
     return snapshot["agents"] if snapshot else make_agents(st.session_state.phase, st.session_state.staffing)
+
+
+def display_task(agent: dict[str, Any]) -> str:
+    """Human-readable task text for cards and the detail page.
+
+    Real snapshots store the raw internal task ID (e.g.
+    "pm-mandate-round-1.round-1.technical.trader") in this field - real,
+    useful data in the raw JSON export, but not meaningful shown to a PM
+    as "Current task" once the work is actually finished.
+    """
+    if agent.get("state") == "Completed":
+        return "Finished this round's work"
+    return agent.get("task", "N/A")
 
 
 def agent_value(agent: dict[str, Any], name: str) -> Any:
@@ -949,7 +998,12 @@ def staffing_dialog(agent_id: str, action: str) -> None:
         else:
             entry = f"{timestamp} — PM chose to {action.lower()} {agent['name']} for Round {next_round}. Reason: {reason}"
         st.session_state.memory.insert(0, entry)
-        st.session_state.notice = f"{agent['name']} is marked {new_status} for the next research round. Decision saved to Memory."
+        st.session_state.notice = (
+            f"{agent['name']} is marked {new_status} for the next round. "
+            "This takes effect once you open View Research Report and "
+            "choose Request Another Round — it doesn't start a new round "
+            "by itself."
+        )
         st.rerun()
 
 
@@ -1002,15 +1056,7 @@ def dashboard() -> None:
         """,
         unsafe_allow_html=True,
     )
-    live_run_state, live_run_message = poll_live_research()
-    if live_run_state == "running":
-        st.info("Research is running. This page updates automatically — no need to refresh.")
-        time.sleep(4)
-        st.rerun()
-    elif live_run_state == "completed":
-        st.success(live_run_message)
-    elif live_run_state == "failed":
-        st.error(f"Live workflow did not complete: {live_run_message}")
+    _live_run_status_fragment()
     snapshot = snapshot_data()
     agents = current_agents(snapshot)
     workflow = snapshot.get("workflow", {}) if snapshot else {}
@@ -1185,11 +1231,11 @@ def dashboard() -> None:
                 if staffing_actionable:
                     st.markdown(
                         "<div style='color:var(--teal); font-size:.82rem; font-weight:600; margin:.2rem 0;'>"
-                        "🔧 Staffing available — Hire, Bench, or Pivot on the detail page below</div>",
+                        "🔧 Staffing available below</div>",
                         unsafe_allow_html=True,
                     )
                 st.caption(agent["role"])
-                st.write(f"**Current task:** {agent['task']}")
+                st.write(f"**Current task:** {display_task(agent)}")
                 a, b = st.columns(2)
                 a.caption(f"Success rate\n\n**{placeholder if no_real_data_yet else agent_value(agent, 'success_rate')}**")
                 b.caption(f"Completion time\n\n**{placeholder if no_real_data_yet else agent_value(agent, 'task_completion_time')}**")
@@ -1258,7 +1304,7 @@ def agent_detail() -> None:
     main, metrics = st.columns([3, 2])
     with main:
         st.subheader("What happened in this round")
-        st.markdown(f"**Current task:** {agent['task']}")
+        st.markdown(f"**Current task:** {display_task(agent)}")
         if snapshot and agent_id in {"fundamental", "quant", "technical"}:
             render_strategy_summary(agent, snapshot)
         elif snapshot and agent_id == "risk":
@@ -1276,8 +1322,9 @@ def agent_detail() -> None:
         times = st.columns(2)
         times[0].markdown(f"**Start Time**  \n{placeholder if no_real_data_yet else agent_value(agent, 'start_time')}")
         times[1].markdown(f"**End Time**  \n{placeholder if no_real_data_yet else agent_value(agent, 'end_time')}")
-        st.markdown(f"**Next Step**  \n{placeholder if no_real_data_yet else agent_value(agent, 'next_step')}")
-        st.markdown(f"**Error Message**  \n{placeholder if no_real_data_yet else agent_value(agent, 'error_message')}")
+        details = st.columns(2)
+        details[0].markdown(f"**Next Step**  \n{placeholder if no_real_data_yet else agent_value(agent, 'next_step')}")
+        details[1].markdown(f"**Error Message**  \n{placeholder if no_real_data_yet else agent_value(agent, 'error_message')}")
     with metrics:
         st.subheader("Productivity Metrics")
         st.metric("Task Completion Time", placeholder if no_real_data_yet else agent_value(agent, "task_completion_time"))

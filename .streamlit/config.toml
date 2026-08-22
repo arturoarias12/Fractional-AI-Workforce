@@ -1,0 +1,11 @@
+[theme]
+# Forces light mode regardless of the visitor's device/browser dark-mode
+# preference. This app's entire custom design (light paper background,
+# dark navy text, white cards) assumes light mode - without this, a phone
+# set to dark mode flips Streamlit's own default text color to near-white,
+# which then renders invisibly against this app's custom white card
+# backgrounds. Reported directly: "black text looks white on mobile."
+base = "light"
+backgroundColor = "#F6F7FA"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#0F1B2D"
